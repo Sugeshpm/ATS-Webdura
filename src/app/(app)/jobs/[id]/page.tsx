@@ -13,7 +13,9 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const { data: job } = await supabase.from("v_jobs_with_counts").select("*").eq("id", id).single();
   if (!job) return notFound();
 
-  const { data: funnel } = await supabase.rpc("job_funnel", { p_job_id: id });
+  const { data: funnel } = await supabase.rpc("job_funnel", { p_job_id: id }) as {
+    data: { stage_id: string; stage_name: string; stage_order: number; count: number }[] | null;
+  };
 
   return (
     <div className="container py-6">
