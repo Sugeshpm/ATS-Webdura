@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { JobFilterBar } from "@/components/jobs/job-filter-bar";
 import { JobCard } from "@/components/jobs/job-card";
+import { BulkActions } from "@/components/shared/bulk-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
             <Switch defaultChecked={params.priority === "1"} aria-label="Show only priority" />
             Show only priority
           </label>
+          <BulkActions kind="jobs" exportQuery={`?status=${status}`} />
           <div className="flex h-9 items-center rounded-md border border-input">
             <button className="flex h-9 items-center justify-center px-2 text-muted-foreground hover:text-foreground" aria-label="Grid view"><LayoutGrid className="h-4 w-4" /></button>
             <div className="h-5 w-px bg-border" />

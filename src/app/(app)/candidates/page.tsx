@@ -4,6 +4,7 @@ import { CandidatesSidebar } from "@/components/candidates/sidebar";
 import { CandidateFilterBar } from "@/components/candidates/candidate-filter-bar";
 import { CandidateTable, type CandidateRow } from "@/components/candidates/candidate-table";
 import { AddCandidateButton } from "@/components/candidates/add-candidate-button";
+import { BulkActions } from "@/components/shared/bulk-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -78,10 +79,13 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
             </h1>
             <p className="mt-0.5 text-xs text-muted-foreground">You can access active candidates across all your jobs from here.</p>
           </div>
-          <AddCandidateButton
-            jobs={(jobs ?? []).map((j: any) => ({ id: j.id, title: j.title }))}
-            stages={(stages ?? []) as never}
-          />
+          <div className="flex items-center gap-2">
+            <BulkActions kind="candidates" exportQuery={`?view=${view}${params.job ? `&job=${params.job}` : ""}`} />
+            <AddCandidateButton
+              jobs={(jobs ?? []).map((j: any) => ({ id: j.id, title: j.title }))}
+              stages={(stages ?? []) as never}
+            />
+          </div>
         </header>
 
         <div className="mt-5">
