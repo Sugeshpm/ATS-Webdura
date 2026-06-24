@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,18 +11,20 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Create your organisation</CardTitle>
-        <CardDescription>Start tracking hiring in minutes.</CardDescription>
+        <CardTitle>Create your account</CardTitle>
+        <CardDescription>An administrator will approve your request before you can sign in.</CardDescription>
       </CardHeader>
       <form action={signupAction}>
         <CardContent className="space-y-4">
           {params.error && (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">{params.error}</div>
           )}
-          <div className="space-y-1.5">
-            <Label htmlFor="organisation">Organisation</Label>
-            <Input id="organisation" name="organisation" required placeholder="Webdura Technologies" />
+
+          <div className="flex items-start gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 p-3 text-xs text-sky-200">
+            <Info className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>You&apos;ll be able to sign in once an administrator reviews and approves your account.</p>
           </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="first_name">First name</Label>
@@ -43,7 +46,7 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
           </div>
         </CardContent>
         <CardFooter className="flex flex-col gap-3">
-          <Button type="submit" className="w-full">Create organisation</Button>
+          <Button type="submit" className="w-full">Request account</Button>
           <p className="text-xs text-muted-foreground">
             Already have an account?{" "}
             <Link href="/login" className="text-primary hover:underline">Sign in</Link>

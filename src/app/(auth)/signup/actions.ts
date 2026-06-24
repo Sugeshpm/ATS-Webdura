@@ -8,10 +8,11 @@ export async function signupAction(formData: FormData) {
   const password = String(formData.get("password") ?? "");
   const first_name = String(formData.get("first_name") ?? "").trim();
   const last_name  = String(formData.get("last_name") ?? "").trim();
-  const tenant_name = String(formData.get("organisation") ?? "").trim();
+  // Org name only matters for the very first user; the trigger uses a default otherwise.
+  const tenant_name = String(formData.get("organisation") ?? "").trim() || "My Organisation";
 
-  if (!email || !password || !tenant_name) {
-    return redirect(`/signup?error=${encodeURIComponent("Organisation, email and password are required.")}`);
+  if (!email || !password) {
+    return redirect(`/signup?error=${encodeURIComponent("Email and password are required.")}`);
   }
 
   const supabase = await createClient();
@@ -27,6 +28,18 @@ export async function signupAction(formData: FormData) {
   if (error) {
     return redirect(`/signup?error=${encodeURIComponent(error.message)}`);
   }
+
+  // After signUp the user is auto-signed-in. If they're not active (i.e. they're
+  // a regular new signup awaiting approval), sign them out and tell them so.
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) {
+    const { data: profile } = await supabase.from("profiles").select("status").eq("id", user.id).single();
+    if (profile?.status !== "active") {
+      await supabase.auth.signOut();
+      return redirect(`/login?signup=pending`);
+    }
+  }
+
   revalidatePath("/", "layout");
   redirect("/dashboard");
 }

@@ -12,11 +12,42 @@ export async function loginAction(formData: FormData) {
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 
-  if (error) {
-    return redirect(`/login?error=${encodeURIComponent(error.message)}`);
+  if (signInError) {
+    return redirect(`/login?error=${encodeURIComponent(signInError.message)}`);
   }
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return redirect(`/login?error=${encodeURIComponent("Could not start session.")}`);
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("status")
+    .eq("id", user.id)
+    .single();
+
+  const status = profile?.status ?? "pending";
+
+  // Block non-active accounts: sign out and surface the reason on the login page.
+  if (status === "pending" || status === "rejected" || status === "disabled") {
+    await supabase.auth.signOut();
+    return redirect(`/login?status=${status}`);
+  }
+
+  // First successful sign-in by an invited member promotes them to active.
+  if (status === "invited") {
+    await supabase
+      .from("profiles")
+      .update({ status: "active", last_login_at: new Date().toISOString() } as never)
+      .eq("id", user.id);
+  } else {
+    await supabase
+      .from("profiles")
+      .update({ last_login_at: new Date().toISOString() } as never)
+      .eq("id", user.id);
+  }
+
   revalidatePath("/", "layout");
   redirect("/dashboard");
 }

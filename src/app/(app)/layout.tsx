@@ -8,12 +8,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Single round-trip: profile + embedded tenant via FK.
+  // Single round-trip: profile + status + embedded tenant via FK.
   const { data: profile } = await supabase
     .from("profiles")
-    .select("first_name, last_name, email, avatar_url, tenant:tenants ( name )")
+    .select("first_name, last_name, email, avatar_url, status, tenant:tenants ( name )")
     .eq("id", user.id)
     .single();
+
+  // Status gate: if anything other than active mid-session, sign out and bounce.
+  const status = (profile as { status?: string } | null)?.status;
+  if (!profile || (status !== "active" && status !== "invited")) {
+    await supabase.auth.signOut();
+    redirect(`/login?status=${status ?? "pending"}`);
+  }
 
   const tenant = (profile as { tenant?: { name: string } | null } | null)?.tenant ?? null;
 
@@ -22,10 +29,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <OrgHeader
         orgName={tenant?.name ?? "Organisation"}
         user={{
-          first_name: profile?.first_name,
-          last_name: profile?.last_name,
-          email: profile?.email ?? user.email,
-          avatar_url: profile?.avatar_url
+          first_name: profile.first_name,
+          last_name: profile.last_name,
+          email: profile.email ?? user.email,
+          avatar_url: profile.avatar_url
         }}
       />
       <TopNav />
