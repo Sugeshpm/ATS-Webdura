@@ -34,3 +34,56 @@ export async function updateCandidate(candidateId: string, patch: Record<string,
   revalidatePath("/candidates");
   return { ok: true };
 }
+
+export async function archiveCandidate(candidateId: string, reason?: string) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("candidates")
+    .update({ is_archived: true, archive_reason: reason ?? null } as never)
+    .eq("id", candidateId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/candidates");
+  return { ok: true };
+}
+
+export async function unarchiveCandidate(candidateId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("candidates")
+    .update({ is_archived: false, archive_reason: null } as never)
+    .eq("id", candidateId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/candidates");
+  return { ok: true };
+}
+
+export async function addNote(applicationId: string, body: string) {
+  const trimmed = body.trim();
+  if (!trimmed) return { ok: false, error: "Empty note." };
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  const { data: me } = await supabase.from("profiles").select("tenant_id").eq("id", user.id).single();
+  if (!me) return { ok: false, error: "No profile." };
+  const { error } = await supabase.from("notes").insert({
+    tenant_id: me.tenant_id, application_id: applicationId, author_id: user.id, body: trimmed
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function updateNote(noteId: string, body: string) {
+  const trimmed = body.trim();
+  if (!trimmed) return { ok: false, error: "Empty note." };
+  const supabase = await createClient();
+  const { error } = await supabase.from("notes").update({ body: trimmed } as never).eq("id", noteId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function deleteNote(noteId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase.from("notes").delete().eq("id", noteId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}

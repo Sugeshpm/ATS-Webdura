@@ -13,7 +13,7 @@ export default async function ReportsPage() {
   return (
     <div className="container py-8">
       <h1 className="text-xl font-semibold">Reports</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Pipeline funnel by job. More reports — sources, time-to-hire, recruiter productivity — in Phase 2.</p>
+      <p className="mt-1 text-sm text-muted-foreground">Pipeline funnel by job.</p>
 
       <ul className="mt-6 space-y-2">
         {(jobs ?? []).map((j: any) => (

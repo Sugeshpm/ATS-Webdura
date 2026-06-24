@@ -63,7 +63,7 @@ export default async function TemplatesPage({ searchParams }: { searchParams: Pr
     <div className="container max-w-4xl py-8">
       <BackToSettings />
       <h1 className="text-xl font-semibold">Templates</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Email, WhatsApp, job descriptions, offer letters, and scorecards. Use <code>{"{{first_name}}"}</code> style variables — supported in Phase 2.</p>
+      <p className="mt-1 text-sm text-muted-foreground">Email, WhatsApp, job descriptions, offer letters, and scorecards. Use <code>{"{{first_name}}"}</code> style variables.</p>
 
       {tableMissing && (
         <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
