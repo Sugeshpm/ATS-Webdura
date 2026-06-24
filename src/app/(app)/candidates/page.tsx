@@ -16,14 +16,16 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
 
   const view = params.view ?? "my";
 
+  // Use !inner so foreign-table filters (e.g. candidate.owner_id) actually filter
+  // the parent applications instead of just nulling out the embedded object.
   let appQuery = supabase
     .from("applications")
     .select(`
       id,
       applied_at,
       updated_at,
-      candidate:candidates ( id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, owner_id ),
-      job:jobs ( id, title ),
+      candidate:candidates!inner ( id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, owner_id ),
+      job:jobs!inner ( id, title ),
       stage:stages ( id, name )
     `)
     .order("updated_at", { ascending: false })
@@ -33,7 +35,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
   else appQuery = appQuery.eq("is_archived", false);
 
   if (params.job) appQuery = appQuery.eq("job_id", params.job);
-  if (view === "my" && user) appQuery = appQuery.eq("candidate.owner_id", user.id);
+  if (view === "my" && user) appQuery = appQuery.eq("candidates.owner_id", user.id);
 
   const [{ data: applications }, { data: jobs }, { data: stages }] = await Promise.all([
     appQuery,

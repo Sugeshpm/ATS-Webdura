@@ -318,7 +318,7 @@ export function AddCandidateForm({ jobs, stages, onDone }: Props) {
         </div>
       </div>
 
-      <div className="fixed bottom-0 right-0 w-[520px] max-w-full border-t border-border bg-card px-6 py-3">
+      <div className="fixed bottom-0 right-0 w-full sm:w-[520px] sm:max-w-full border-t border-border bg-card px-6 py-3">
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onDone} disabled={pending}>Cancel</Button>
           <Button onClick={submit} disabled={pending}>{pending ? "Saving…" : "Add Candidate"}</Button>

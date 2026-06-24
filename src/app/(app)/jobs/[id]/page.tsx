@@ -1,8 +1,11 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { DeleteJobButton } from "@/components/jobs/delete-job-button";
 import { formatDate } from "@/lib/utils";
-import { Calendar, MapPin, Briefcase, Users } from "lucide-react";
+import { Calendar, MapPin, Briefcase, Users, Pencil } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -19,8 +22,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   return (
     <div className="container py-6">
-      <div className="flex items-start justify-between">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">{job.department_name ?? "—"}</p>
           <h1 className="text-2xl font-semibold">{job.title}</h1>
           <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
@@ -33,6 +36,12 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             {job.confidential && <Badge variant="confidential">CONFIDENTIAL</Badge>}
             {job.priority && <Badge variant="priority">PRIORITY</Badge>}
           </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button asChild variant="outline">
+            <Link href={`/jobs/${id}/edit`}><Pencil className="mr-1 h-4 w-4" /> Edit</Link>
+          </Button>
+          <DeleteJobButton jobId={id} jobTitle={job.title} />
         </div>
       </div>
 

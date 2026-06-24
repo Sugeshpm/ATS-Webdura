@@ -39,7 +39,7 @@ export function NotesRail({ applicationId, notes }: { applicationId: string; not
   }
 
   return (
-    <div className="w-80 shrink-0 border-l border-border p-4">
+    <div className="w-full shrink-0 border-t border-border p-4 lg:w-80 lg:border-l lg:border-t-0">
       <Textarea placeholder="Share your thoughts and notes here..." rows={3} value={body} onChange={(e) => setBody(e.target.value)} />
       <div className="mt-2 flex justify-end">
         <Button size="sm" onClick={submit} disabled={pending || !body.trim()}>Post</Button>

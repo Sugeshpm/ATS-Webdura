@@ -19,7 +19,7 @@ export function AddCandidateButton({ jobs, stages }: Props) {
           <Plus className="mr-1 h-4 w-4" /> Add Candidate <ChevronDown className="ml-1 h-3 w-3 opacity-70" />
         </Button>
       </SheetTrigger>
-      <SheetContent side="right" className="w-[520px] max-w-full">
+      <SheetContent side="right" className="w-full sm:w-[520px] sm:max-w-full">
         <SheetHeader>
           <SheetTitle>Add Candidate</SheetTitle>
         </SheetHeader>

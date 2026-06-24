@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { ChevronDown, LayoutGrid, List, Plus } from "lucide-react";
+import { LayoutGrid, List, Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { JobFilterBar } from "@/components/jobs/job-filter-bar";
-import { JobCard } from "@/components/jobs/job-card";
+import { JobsGrid } from "@/components/jobs/jobs-grid";
+import { JobStatusSwitcher } from "@/components/jobs/status-switcher";
 import { BulkActions } from "@/components/shared/bulk-actions";
 
 export const dynamic = "force-dynamic";
@@ -39,13 +40,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     <div className="container py-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold">
-              {status === "all" ? "All Jobs" : status === "active" ? "Active Jobs" : status[0].toUpperCase() + status.slice(1) + " Jobs"}{" "}
-              <span className="text-muted-foreground">({jobs?.length ?? 0})</span>
-            </h1>
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          </div>
+          <JobStatusSwitcher count={jobs?.length ?? 0} />
           <p className="mt-1 text-xs text-muted-foreground">Here you can find all the jobs of this organisation.</p>
         </div>
 
@@ -78,16 +73,8 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
         />
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {(jobs ?? []).map((j) => (
-          <JobCard key={j.id} job={j as never} />
-        ))}
-        {(!jobs || jobs.length === 0) && (
-          <div className="col-span-full rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
-            No jobs yet.{" "}
-            <Link href="/jobs/new" className="text-primary hover:underline">Create your first job</Link>.
-          </div>
-        )}
+      <div className="mt-6">
+        <JobsGrid jobs={(jobs ?? []) as never} />
       </div>
     </div>
   );

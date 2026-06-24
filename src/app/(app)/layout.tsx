@@ -8,17 +8,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  // Single round-trip: profile + embedded tenant via FK.
   const { data: profile } = await supabase
     .from("profiles")
-    .select("first_name, last_name, email, avatar_url, tenant_id")
+    .select("first_name, last_name, email, avatar_url, tenant:tenants ( name )")
     .eq("id", user.id)
     .single();
 
-  const { data: tenant } = await supabase
-    .from("tenants")
-    .select("name")
-    .eq("id", profile?.tenant_id ?? "")
-    .single();
+  const tenant = (profile as { tenant?: { name: string } | null } | null)?.tenant ?? null;
 
   return (
     <div className="flex min-h-screen flex-col">

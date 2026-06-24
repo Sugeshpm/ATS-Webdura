@@ -30,12 +30,12 @@ export function OrgHeader({ orgName, user }: Props) {
 
   return (
     <header className="bg-brand-header text-white">
-      <div className="flex h-12 items-center gap-3 px-4">
+      <div className="flex h-12 items-center gap-3 px-3 sm:px-4">
         <a href="/dashboard" className="flex-shrink-0" aria-label={orgName}>
           <img src="/images/logo.png" alt={orgName} className="h-7 w-auto" />
         </a>
 
-        <div className="ml-2 flex max-w-2xl flex-1 items-center rounded-md bg-white/10 px-3 py-1.5">
+        <div className="ml-2 hidden max-w-2xl flex-1 items-center rounded-md bg-white/10 px-3 py-1.5 md:flex">
           <Search className="mr-2 h-4 w-4 opacity-70" />
           <input
             placeholder="Search candidates by name, phone number or email"

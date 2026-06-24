@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StageMoveMenu } from "@/components/candidates/stage-move-menu";
 import { NotesRail } from "@/components/candidates/notes-rail";
+import { EditCandidateDrawer } from "@/components/candidates/edit-candidate-drawer";
+import { DeleteCandidateButton } from "@/components/candidates/delete-candidate-button";
+import { ResumePreviewButton } from "@/components/candidates/resume-preview";
 import { initials, formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +23,13 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
     .from("applications")
     .select(`
       id, applied_at, current_stage_id, applied_via,
-      candidate:candidates ( id, first_name, last_name, email, phone, current_location, experience_years, experience_months, notice_period_days, source, current_salary, current_salary_currency, owner_id, linkedin_url, github_url, portfolio_url ),
+      candidate:candidates (
+        id, first_name, middle_name, last_name, email, phone, gender, date_of_birth,
+        current_company, current_location, preferred_location,
+        experience_years, experience_months, notice_period_days,
+        current_salary, current_salary_currency, expected_salary, expected_salary_currency,
+        source, owner_id, linkedin_url, github_url, portfolio_url
+      ),
       job:jobs ( id, title ),
       stage:stages ( id, name, code )
     `)
@@ -45,7 +54,7 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
   const skills = (skillsRows ?? []).map((r: any) => r.skill).filter(Boolean) as { id: string; name: string }[];
 
   return (
-    <div className="flex">
+    <div className="flex flex-col lg:flex-row">
       <div className="flex-1 px-6 py-5">
         <div className="flex items-center justify-between text-xs">
           <div className="flex items-center gap-2 text-muted-foreground">
@@ -60,7 +69,7 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
           </div>
         </div>
 
-        <header className="mt-3 flex items-start gap-4">
+        <header className="mt-3 flex flex-col items-start gap-4 lg:flex-row">
           <Avatar className="h-16 w-16">
             <AvatarFallback className="text-lg">{initials(candidate.first_name, candidate.last_name)}</AvatarFallback>
           </Avatar>
@@ -89,6 +98,11 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
               <button className="rounded p-1.5 hover:bg-secondary" aria-label="Email"><Mail className="h-4 w-4" /></button>
               <button className="rounded p-1.5 hover:bg-secondary" aria-label="WhatsApp"><MessageSquare className="h-4 w-4" /></button>
               <button className="rounded p-1.5 hover:bg-secondary" aria-label="More"><MoreHorizontal className="h-4 w-4" /></button>
+            </div>
+            <div className="flex items-center gap-2">
+              <ResumePreviewButton document={((documents ?? []).find((d: { kind: string }) => d.kind === "resume") ?? null) as never} />
+              <EditCandidateDrawer initial={candidate as never} />
+              <DeleteCandidateButton candidateId={candidate.id} candidateName={`${candidate.first_name} ${candidate.last_name ?? ""}`.trim()} />
             </div>
           </div>
         </header>

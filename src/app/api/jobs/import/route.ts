@@ -68,7 +68,7 @@ export async function POST(req: Request) {
       priority: bool(r.priority),
       confidential: bool(r.confidential),
       target_close_date: r.target_close_date?.trim() || null,
-      status: (["draft", "active", "archived", "closed"].includes((r.status || "").trim()) ? r.status!.trim() : "draft") as "draft" | "active" | "archived" | "closed",
+      status: (["draft", "active", "archived", "closed"].includes((r.status || "").trim()) ? r.status!.trim() : "active") as "draft" | "active" | "archived" | "closed",
       created_by: user.id
     }));
 
