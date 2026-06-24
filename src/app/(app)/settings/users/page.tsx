@@ -28,7 +28,7 @@ interface ProfileRow {
   created_at: string;
 }
 
-export default async function UsersPage({ searchParams }: { searchParams: Promise<{ filter?: Filter }> }) {
+export default async function UsersPage({ searchParams }: { searchParams: Promise<{ filter?: Filter; invite?: "success" | "error"; msg?: string }> }) {
   const params = await searchParams;
   const filter = (FILTERS as readonly string[]).includes(params.filter ?? "") ? (params.filter as Filter) : "all";
 
@@ -61,6 +61,16 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
       <p className="mt-1 text-sm text-muted-foreground">
         Review pending registrations, invite new members, and manage existing accounts.
       </p>
+
+      {params.invite && params.msg && (
+        <div className={`mt-4 rounded-md border p-3 text-sm ${
+          params.invite === "success"
+            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+            : "border-rose-500/30 bg-rose-500/10 text-rose-200"
+        }`}>
+          {decodeURIComponent(params.msg)}
+        </div>
+      )}
 
       {/* Status filter chips */}
       <div className="mt-5 flex flex-wrap gap-2">

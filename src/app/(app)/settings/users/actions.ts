@@ -1,7 +1,12 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/admin";
+
+function flashRedirect(status: "success" | "error", message: string) {
+  redirect(`/settings/users?invite=${status}&msg=${encodeURIComponent(message)}`);
+}
 
 async function requireAdmin() {
   const supabase = await createClient();
@@ -68,39 +73,56 @@ export async function changeRole(targetId: string, role: string) {
 
 export async function resendInvite(targetEmail: string) {
   const ctx = await requireAdmin();
-  if (!ctx.ok) return ctx;
-  const admin = createServiceClient();
+  if (!ctx.ok) flashRedirect("error", ctx.error);
+
+  let admin;
+  try { admin = createServiceClient(); }
+  catch (e) { flashRedirect("error", e instanceof Error ? e.message : "Service role key not configured."); return; }
+
+  const callbackUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/auth/callback?next=/reset-password`;
   const { error } = await admin.auth.admin.inviteUserByEmail(targetEmail, {
-    data: { invited_by_admin: true, tenant_id: ctx.me.tenant_id },
-    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/auth/callback`
+    data: { invited_by_admin: true, tenant_id: ctx.ok ? ctx.me.tenant_id : null },
+    redirectTo: callbackUrl
   });
-  if (error) return { ok: false as const, error: error.message };
+  if (error) flashRedirect("error", error.message);
   revalidatePath("/settings/users");
-  return { ok: true as const };
+  flashRedirect("success", `Invitation re-sent to ${targetEmail}.`);
 }
 
 export async function inviteUser(formData: FormData) {
-  const email = String(formData.get("email") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const first_name = String(formData.get("first_name") ?? "").trim();
   const last_name = String(formData.get("last_name") ?? "").trim();
   const role = String(formData.get("role") ?? "recruiter");
-  if (!email) return;
+  if (!email) flashRedirect("error", "Email is required.");
 
   const ctx = await requireAdmin();
-  if (!ctx.ok) return;
+  if (!ctx.ok) flashRedirect("error", ctx.error);
+  if (!ctx.ok) return; // narrowing helper
 
-  const admin = createServiceClient();
+  // Pre-check duplicate to give a friendlier error than Supabase's raw 422.
+  const { data: existing } = await ctx.supabase.from("profiles").select("id, status").eq("email", email).maybeSingle();
+  if (existing) flashRedirect("error", `A user with ${email} already exists (status: ${(existing as { status: string }).status}).`);
+
+  let admin;
+  try { admin = createServiceClient(); }
+  catch (e) { flashRedirect("error", e instanceof Error ? e.message : "Service role key not configured. Set SUPABASE_SERVICE_ROLE_KEY."); return; }
+
+  const callbackUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/auth/callback?next=/reset-password`;
   const { data: invited, error } = await admin.auth.admin.inviteUserByEmail(email, {
     data: { first_name, last_name, tenant_id: ctx.me.tenant_id, role, invited_by_admin: true },
-    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/auth/callback`
+    redirectTo: callbackUrl
   });
-  if (error || !invited?.user) return;
+  if (error || !invited?.user) flashRedirect("error", error?.message ?? "Invitation failed — Supabase returned no user.");
+  if (!invited?.user) return;
 
-  // The trigger created a profile with role='recruiter' status='invited'; sync explicit values.
-  await admin
+  // The DB trigger created the profile; ensure explicit role + names are set.
+  const { error: updErr } = await admin
     .from("profiles")
     .update({ tenant_id: ctx.me.tenant_id, role, status: "invited", first_name, last_name } as never)
     .eq("id", invited.user.id);
+  if (updErr) flashRedirect("error", `Invite sent, but couldn't sync profile: ${updErr.message}`);
 
   revalidatePath("/settings/users");
+  flashRedirect("success", `Invitation sent to ${email}. They'll receive an email shortly.`);
 }
