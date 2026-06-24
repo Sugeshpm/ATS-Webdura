@@ -15,7 +15,7 @@ interface Resume {
 }
 
 interface Props {
-  candidate: CandidateInitial & { is_archived: boolean };
+  candidate: CandidateInitial & { category: "active" | "talent_pool" | "archived" | "duplicate" };
   email: string | null;
   resume: Resume | null;
   tabs: {

@@ -1,13 +1,11 @@
 "use client";
 import * as React from "react";
-import { useRouter } from "next/navigation";
-import { Pencil, Trash2, Eye, Download, CalendarPlus, Mail, StickyNote, Archive, ArchiveRestore, MoreHorizontal } from "lucide-react";
+import { Trash2, Eye, Download, CalendarPlus, Mail, StickyNote, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -15,11 +13,9 @@ import { toast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
 import { EditCandidateDrawer } from "@/components/candidates/edit-candidate-drawer";
 import type { CandidateInitial } from "@/components/candidates/edit-candidate-drawer";
-import {
-  archiveCandidate,
-  unarchiveCandidate,
-  deleteCandidateAndRedirect
-} from "@/app/(app)/candidates/actions";
+import { MoveToMenu } from "@/components/candidates/move-to-menu";
+import { CategoryBadge } from "@/components/candidates/candidate-table";
+import { deleteCandidateAndRedirect, type CandidateCategory } from "@/app/(app)/candidates/actions";
 
 interface Resume {
   id: string;
@@ -30,7 +26,7 @@ interface Resume {
 }
 
 interface Props {
-  candidate: CandidateInitial & { is_archived?: boolean };
+  candidate: CandidateInitial & { category: CandidateCategory };
   email: string | null;
   resume: Resume | null;
   onAddNote: () => void;
@@ -38,9 +34,7 @@ interface Props {
 }
 
 export function CandidateActionBar({ candidate, email, resume, onAddNote, onPreviewResume }: Props) {
-  const router = useRouter();
   const [confirmDelete, setConfirmDelete] = React.useState(false);
-  const [confirmArchive, setConfirmArchive] = React.useState(false);
   const [pending, setPending] = React.useState(false);
 
   async function downloadResume() {
@@ -60,19 +54,11 @@ export function CandidateActionBar({ candidate, email, resume, onAddNote, onPrev
     toast.success("Candidate deleted.");
   }
 
-  async function doArchive() {
-    setPending(true);
-    const r = candidate.is_archived ? await unarchiveCandidate(candidate.id) : await archiveCandidate(candidate.id);
-    setPending(false);
-    if (!r.ok) return toast.error(r.error ?? "Action failed.");
-    toast.success(candidate.is_archived ? "Candidate restored." : "Candidate archived.");
-    setConfirmArchive(false);
-    router.refresh();
-  }
-
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
-      {/* Primary actions */}
+      {/* Category badge — clearly shows current state */}
+      <CategoryBadge value={candidate.category} />
+
       <EditCandidateDrawer initial={candidate} />
 
       <Button variant="outline" size="sm" onClick={onPreviewResume} disabled={!resume}>
@@ -101,6 +87,13 @@ export function CandidateActionBar({ candidate, email, resume, onAddNote, onPrev
         <StickyNote className="mr-1 h-4 w-4" /> Add note
       </Button>
 
+      {/* Move to category — replaces single Archive button */}
+      <MoveToMenu
+        candidateIds={[candidate.id]}
+        currentCategory={candidate.category}
+        variant="button"
+      />
+
       <div className="ml-auto flex items-center gap-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -109,12 +102,6 @@ export function CandidateActionBar({ candidate, email, resume, onAddNote, onPrev
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem onSelect={() => setConfirmArchive(true)}>
-              {candidate.is_archived
-                ? (<><ArchiveRestore className="mr-2 h-4 w-4" /> Restore from archive</>)
-                : (<><Archive className="mr-2 h-4 w-4" /> Archive candidate</>)}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => setConfirmDelete(true)} className="text-rose-400 focus:text-rose-400">
               <Trash2 className="mr-2 h-4 w-4" /> Delete candidate
             </DropdownMenuItem>
@@ -131,18 +118,6 @@ export function CandidateActionBar({ candidate, email, resume, onAddNote, onPrev
         destructive
         pending={pending}
         onConfirm={doDelete}
-      />
-
-      <ConfirmDialog
-        open={confirmArchive}
-        onOpenChange={setConfirmArchive}
-        title={candidate.is_archived ? "Restore candidate from archive?" : "Archive this candidate?"}
-        description={candidate.is_archived
-          ? "They'll reappear in the main candidates list."
-          : "Archived candidates are hidden from the default list but their data is preserved."}
-        confirmLabel={candidate.is_archived ? "Restore" : "Archive"}
-        pending={pending}
-        onConfirm={doArchive}
       />
     </div>
   );

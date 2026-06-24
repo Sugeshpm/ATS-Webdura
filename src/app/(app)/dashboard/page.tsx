@@ -9,7 +9,7 @@ export default async function DashboardPage() {
 
   const [{ count: activeJobs }, { count: totalCandidates }, { count: upcomingInterviews }, { count: hiredThisMonth }] = await Promise.all([
     supabase.from("jobs").select("id", { count: "exact", head: true }).eq("status", "active"),
-    supabase.from("candidates").select("id", { count: "exact", head: true }).eq("is_archived", false),
+    supabase.from("candidates").select("id", { count: "exact", head: true }).eq("category", "active"),
     supabase.from("interviews").select("id", { count: "exact", head: true }).gte("scheduled_start", new Date().toISOString()).eq("status", "scheduled"),
     supabase.from("applications").select("id", { count: "exact", head: true }).gte("updated_at", new Date(new Date().setDate(1)).toISOString())
   ]);

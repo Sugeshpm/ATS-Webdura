@@ -3,7 +3,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
-/** Delete a candidate (and via FK cascade: their applications, history, notes, messages, docs). */
+export type CandidateCategory = "active" | "talent_pool" | "archived" | "duplicate";
+const CATEGORIES: CandidateCategory[] = ["active", "talent_pool", "archived", "duplicate"];
+
+/** Delete a candidate (cascades to applications, history, notes, messages, docs). */
 export async function deleteCandidate(candidateId: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("candidates").delete().eq("id", candidateId);
@@ -35,28 +38,89 @@ export async function updateCandidate(candidateId: string, patch: Record<string,
   return { ok: true };
 }
 
-export async function archiveCandidate(candidateId: string, reason?: string) {
+/** Move one candidate to a new category. Logs to audit_logs. */
+export async function moveCandidateCategory(candidateId: string, to: CandidateCategory) {
+  if (!CATEGORIES.includes(to)) return { ok: false as const, error: "Invalid category." };
+
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false as const, error: "Not signed in." };
+  const { data: me } = await supabase.from("profiles").select("tenant_id").eq("id", user.id).single();
+  if (!me) return { ok: false as const, error: "Profile not found." };
+
+  const { data: before } = await supabase
+    .from("candidates")
+    .select("category")
+    .eq("id", candidateId)
+    .single();
+  const fromCategory = (before as { category?: string } | null)?.category ?? null;
+  if (fromCategory === to) return { ok: true as const, unchanged: true };
+
   const { error } = await supabase
     .from("candidates")
-    .update({ is_archived: true, archive_reason: reason ?? null } as never)
+    .update({ category: to } as never)
     .eq("id", candidateId);
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false as const, error: error.message };
+
+  // Audit log (best effort)
+  await supabase.from("audit_logs").insert({
+    tenant_id: me.tenant_id,
+    actor_id: user.id,
+    action: "move_candidate_category",
+    entity: "candidate",
+    entity_id: candidateId,
+    before: { category: fromCategory },
+    after: { category: to }
+  } as never);
+
   revalidatePath("/candidates");
-  return { ok: true };
+  return { ok: true as const };
 }
 
-export async function unarchiveCandidate(candidateId: string) {
+/** Move many candidates in one shot. Returns count moved and any failures. */
+export async function moveCandidatesCategory(candidateIds: string[], to: CandidateCategory) {
+  if (!candidateIds.length) return { ok: true as const, moved: 0 };
+  if (!CATEGORIES.includes(to)) return { ok: false as const, error: "Invalid category." };
+
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false as const, error: "Not signed in." };
+  const { data: me } = await supabase.from("profiles").select("tenant_id").eq("id", user.id).single();
+  if (!me) return { ok: false as const, error: "Profile not found." };
+
+  // Read current categories so the audit log captures the per-row delta.
+  const { data: before } = await supabase
     .from("candidates")
-    .update({ is_archived: false, archive_reason: null } as never)
-    .eq("id", candidateId);
-  if (error) return { ok: false, error: error.message };
+    .select("id, category")
+    .in("id", candidateIds);
+
+  const { error, count } = await supabase
+    .from("candidates")
+    .update({ category: to } as never, { count: "exact" })
+    .in("id", candidateIds);
+  if (error) return { ok: false as const, error: error.message };
+
+  // Audit log per row
+  const rows = (before ?? []) as { id: string; category: string }[];
+  if (rows.length) {
+    await supabase.from("audit_logs").insert(
+      rows.map((r) => ({
+        tenant_id: me.tenant_id,
+        actor_id: user.id,
+        action: "move_candidate_category",
+        entity: "candidate",
+        entity_id: r.id,
+        before: { category: r.category },
+        after: { category: to }
+      })) as never
+    );
+  }
+
   revalidatePath("/candidates");
-  return { ok: true };
+  return { ok: true as const, moved: count ?? candidateIds.length };
 }
 
+// Note CRUD (unchanged)
 export async function addNote(applicationId: string, body: string) {
   const trimmed = body.trim();
   if (!trimmed) return { ok: false, error: "Empty note." };

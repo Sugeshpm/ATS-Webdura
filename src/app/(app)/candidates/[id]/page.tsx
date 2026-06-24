@@ -27,7 +27,7 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
         experience_years, experience_months, notice_period_days,
         current_salary, current_salary_currency, expected_salary, expected_salary_currency,
         source, owner_id, linkedin_url, github_url, portfolio_url,
-        is_archived, updated_at
+        category, updated_at
       ),
       job:jobs ( id, title ),
       stage:stages ( id, name, code, color )
@@ -142,7 +142,7 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
     linkedin_url: candidate.linkedin_url,
     github_url: candidate.github_url,
     portfolio_url: candidate.portfolio_url,
-    is_archived: candidate.is_archived
+    category: (candidate.category ?? "active") as "active" | "talent_pool" | "archived" | "duplicate"
   };
 
   return (
