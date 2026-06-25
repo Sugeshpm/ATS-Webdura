@@ -4,7 +4,7 @@ import { Toaster as SonnerToaster } from "sonner";
 export function Toaster() {
   return (
     <SonnerToaster
-      theme="dark"
+      theme="light"
       position="top-right"
       toastOptions={{
         classNames: {

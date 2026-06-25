@@ -4,45 +4,66 @@
 
 @layer base {
   :root {
-    /* dark theme: #E94B35 on black */
-    --background: 0 0% 5%;
-    --foreground: 0 0% 95%;
+    /* Spec palette — Enterprise SaaS ATS
+       Background #F8FAFC, Sidebar #0F172A, Primary #EF4444, Border #E2E8F0 */
+    --background: 210 40% 98%;       /* #F8FAFC slate-50 */
+    --foreground: 222 47% 11%;       /* #0F172A slate-900 */
 
-    --card: 0 0% 8%;
-    --card-foreground: 0 0% 95%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
 
-    --popover: 0 0% 6%;
-    --popover-foreground: 0 0% 95%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
 
-    --primary: 8 81% 56%;            /* #E94B35 */
+    --primary: 0 84% 60%;            /* #EF4444 red-500 */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 0 0% 12%;
-    --secondary-foreground: 0 0% 95%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
 
-    --muted: 0 0% 10%;
-    --muted-foreground: 0 0% 62%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;  /* #64748B slate-500 */
 
-    --accent: 0 0% 14%;
-    --accent-foreground: 0 0% 95%;
+    --accent: 210 40% 94%;
+    --accent-foreground: 222 47% 11%;
 
-    --destructive: 8 81% 56%;        /* unify with primary — single accent */
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 16%;
-    --input: 0 0% 16%;
-    --ring: 8 81% 56%;
+    --border: 214 32% 91%;            /* #E2E8F0 slate-200 */
+    --input: 214 32% 91%;
+    --ring: 0 84% 60%;
 
-    --radius: 0.5rem;
+    --radius: 0.75rem;                /* 12px per spec */
+
+    --surface-elevated: 0 0% 100%;
+    --surface-sunken: 210 40% 96%;
+
+    /* Sidebar tokens */
+    --sidebar: 222 47% 11%;           /* #0F172A */
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-muted: 215 16% 65%;
+    --sidebar-border: 217 33% 17%;
+    --sidebar-hover: 217 33% 17%;
+    --sidebar-active: 0 84% 60% / 0.15;
   }
 
   html, body { height: 100%; }
-  body { @apply bg-background text-foreground antialiased; font-feature-settings: "rlig" 1, "calt" 1; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
   * { @apply border-border; }
+
+  *:focus-visible {
+    outline: 2px solid hsl(var(--ring) / 0.6);
+    outline-offset: 2px;
+  }
 }
 
-/* Scrollbar styling */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: hsl(var(--background)); }
-::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 8px; }
-::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.4); }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: hsl(214 32% 84%); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: hsl(214 32% 70%); border: 2px solid transparent; background-clip: padding-box; }

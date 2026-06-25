@@ -109,19 +109,22 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
   ]);
 
   return (
-    <div className="flex">
+    <div className="flex min-h-[calc(100vh-6rem)]">
       <CandidatesSidebar
         activeJobs={(jobs ?? []).map((j: any) => ({ id: j.id, title: j.title, candidate_count: j.candidate_count }))}
         counts={{ my: rows.length, upcomingInterviews: 0, pendingFeedback: 0 }}
       />
 
-      <div className="flex-1 px-4 py-5 sm:px-6">
-        <header className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-lg font-semibold">{titleFor(view)}</h1>
-            <p className="mt-0.5 text-xs text-muted-foreground">{subtitleFor(view)}</p>
+      <div className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-baseline gap-3">
+              <h1 className="text-xl font-semibold tracking-tight">{titleFor(view)}</h1>
+              <span className="rounded-md bg-secondary px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">{rows.length}</span>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">{subtitleFor(view)}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <BulkActions kind="candidates" exportQuery={`?view=${view}${params.job ? `&job=${params.job}` : ""}`} />
             <AddCandidateButton
               jobs={(jobs ?? []).map((j: any) => ({ id: j.id, title: j.title }))}

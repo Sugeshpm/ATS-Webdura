@@ -5,16 +5,16 @@ import { useRouter } from "next/navigation";
 import { Mail, Phone, Trash2, X } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+import { Badge, stageBadgeVariant } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { formatDate, initials } from "@/lib/utils";
+import { formatDate, initials, cn } from "@/lib/utils";
 import { deleteCandidates, type CandidateCategory } from "@/app/(app)/candidates/actions";
 import { MoveToMenu } from "@/components/candidates/move-to-menu";
 
 export type CandidateRow = {
-  application_id: string | null;       // null in candidate-centric views (no current application)
+  application_id: string | null;
   candidate_id: string;
   first_name: string;
   last_name: string | null;
@@ -32,6 +32,20 @@ export type CandidateRow = {
   gender: string | null;
   category: CandidateCategory;
 };
+
+const AVATAR_TONES = [
+  "bg-rose-100 text-rose-700",
+  "bg-amber-100 text-amber-700",
+  "bg-emerald-100 text-emerald-700",
+  "bg-sky-100 text-sky-700",
+  "bg-violet-100 text-violet-700",
+  "bg-orange-100 text-orange-700"
+];
+
+function avatarTone(seed: string) {
+  let h = 0; for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return AVATAR_TONES[h % AVATAR_TONES.length];
+}
 
 export function CandidateTable({ rows }: { rows: CandidateRow[] }) {
   const router = useRouter();
@@ -60,8 +74,14 @@ export function CandidateTable({ rows }: { rows: CandidateRow[] }) {
 
   if (!rows.length) {
     return (
-      <div className="rounded-md border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
-        No candidates in this view.
+      <div className="rounded-xl border border-dashed border-border bg-white p-12 text-center">
+        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-secondary">
+          <svg className="h-5 w-5 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="7" r="4" /><path d="M5 21v-2a7 7 0 0114 0v2" /></svg>
+        </div>
+        <h3 className="text-sm font-semibold">No candidates here yet</h3>
+        <p className="mx-auto mt-1 max-w-sm text-xs text-muted-foreground">
+          Add candidates via the &ldquo;+ Add Candidate&rdquo; button, import from CSV, or move existing candidates into this category.
+        </p>
       </div>
     );
   }
@@ -70,83 +90,107 @@ export function CandidateTable({ rows }: { rows: CandidateRow[] }) {
 
   return (
     <>
-      <div className="overflow-x-auto rounded-md border border-border">
+      <div className="overflow-x-auto rounded-xl border border-border bg-white shadow-card">
         <table className="min-w-full text-sm">
-          <thead className="bg-secondary/50 text-[11px] uppercase tracking-wider text-muted-foreground">
+          <thead className="bg-surface-sunken text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             <tr>
-              <Th className="w-8 pl-3">
+              <Th className="w-10 pl-4">
                 <Checkbox checked={allChecked} onCheckedChange={toggleAll} aria-label="Select all" />
               </Th>
-              <Th>Candidate name</Th>
+              <Th>Candidate</Th>
               <Th>Job title</Th>
               <Th>Stage</Th>
               <Th>Category</Th>
-              <Th>Experience</Th>
+              <Th>Exp.</Th>
               <Th>Last updated</Th>
               <Th>Source</Th>
-              <Th>Application date</Th>
-              <Th>Previous company</Th>
-              <Th>Preferred location</Th>
+              <Th>Applied</Th>
+              <Th>Previous co.</Th>
+              <Th>Preferred loc.</Th>
               <Th>Contact</Th>
-              <Th className="w-12 text-right">Actions</Th>
+              <Th className="w-12 pr-4 text-right">Actions</Th>
             </tr>
           </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.application_id ?? r.candidate_id} className="border-t border-border hover:bg-secondary/30">
-                <Td className="pl-3">
-                  <Checkbox checked={selected.has(r.candidate_id)} onCheckedChange={() => toggle(r.candidate_id)} aria-label="Select row" />
-                </Td>
-                <Td>
-                  {r.application_id ? (
-                    <Link href={`/candidates/${r.application_id}`} className="flex items-center gap-2 hover:underline">
-                      <Avatar className="h-7 w-7">
-                        <AvatarFallback className="text-[10px]">{initials(r.first_name, r.last_name)}</AvatarFallback>
-                      </Avatar>
-                      <span className="font-medium">{r.first_name} {r.last_name ?? ""}</span>
-                    </Link>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <Avatar className="h-7 w-7">
-                        <AvatarFallback className="text-[10px]">{initials(r.first_name, r.last_name)}</AvatarFallback>
-                      </Avatar>
-                      <span className="font-medium">{r.first_name} {r.last_name ?? ""}</span>
-                    </div>
+          <tbody className="divide-y divide-border">
+            {rows.map((r) => {
+              const isSelected = selected.has(r.candidate_id);
+              return (
+                <tr
+                  key={r.application_id ?? r.candidate_id}
+                  className={cn(
+                    "group h-14 transition-colors",
+                    isSelected ? "bg-primary/5" : "hover:bg-secondary/40"
                   )}
-                </Td>
-                <Td>{r.job_title ?? <span className="text-muted-foreground">—</span>}</Td>
-                <Td>{r.stage_name ? <Badge>{r.stage_name}</Badge> : <span className="text-muted-foreground">—</span>}</Td>
-                <Td><CategoryBadge value={r.category} /></Td>
-                <Td>{r.experience_years ?? 0}y {r.experience_months ?? 0}m</Td>
-                <Td>{formatDate(r.updated_at)}</Td>
-                <Td>{r.source ?? "—"}</Td>
-                <Td>{r.applied_at ? formatDate(r.applied_at) : "—"}</Td>
-                <Td>{r.current_company ?? <span className="text-muted-foreground">Not available</span>}</Td>
-                <Td>{r.preferred_location ?? <span className="text-muted-foreground">Not available</span>}</Td>
-                <Td>
-                  <div className="flex flex-col gap-0.5 text-xs">
-                    {r.phone && <span className="inline-flex items-center gap-1"><Phone className="h-3 w-3" />{r.phone}</span>}
-                    {r.email && <span className="inline-flex items-center gap-1"><Mail className="h-3 w-3" />{r.email}</span>}
-                  </div>
-                </Td>
-                <Td className="text-right">
-                  <MoveToMenu candidateIds={[r.candidate_id]} currentCategory={r.category} variant="icon" />
-                </Td>
-              </tr>
-            ))}
+                >
+                  <Td className="pl-4">
+                    <Checkbox checked={isSelected} onCheckedChange={() => toggle(r.candidate_id)} aria-label="Select row" />
+                  </Td>
+                  <Td>
+                    {r.application_id ? (
+                      <Link href={`/candidates/${r.application_id}`} className="flex items-center gap-2.5 hover:text-primary">
+                        <Avatar className="h-8 w-8 ring-1 ring-border">
+                          <AvatarFallback className={cn("text-[11px] font-semibold", avatarTone(r.candidate_id))}>
+                            {initials(r.first_name, r.last_name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="font-medium">{r.first_name} {r.last_name ?? ""}</span>
+                      </Link>
+                    ) : (
+                      <div className="flex items-center gap-2.5">
+                        <Avatar className="h-8 w-8 ring-1 ring-border">
+                          <AvatarFallback className={cn("text-[11px] font-semibold", avatarTone(r.candidate_id))}>
+                            {initials(r.first_name, r.last_name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="font-medium">{r.first_name} {r.last_name ?? ""}</span>
+                      </div>
+                    )}
+                  </Td>
+                  <Td className="max-w-[180px] truncate" title={r.job_title ?? undefined}>
+                    {r.job_title ?? <span className="text-muted-foreground">—</span>}
+                  </Td>
+                  <Td>
+                    {r.stage_name
+                      ? <Badge variant={stageBadgeVariant(r.stage_name)}>{r.stage_name}</Badge>
+                      : <span className="text-muted-foreground">—</span>}
+                  </Td>
+                  <Td><CategoryBadge value={r.category} /></Td>
+                  <Td className="text-foreground/80">{r.experience_years ?? 0}y {r.experience_months ?? 0}m</Td>
+                  <Td className="text-muted-foreground">{formatDate(r.updated_at)}</Td>
+                  <Td className="text-muted-foreground">{r.source ?? "—"}</Td>
+                  <Td className="text-muted-foreground">{r.applied_at ? formatDate(r.applied_at) : "—"}</Td>
+                  <Td className="max-w-[160px] truncate text-foreground/80" title={r.current_company ?? undefined}>
+                    {r.current_company ?? <span className="text-muted-foreground">Not available</span>}
+                  </Td>
+                  <Td className="max-w-[160px] truncate text-foreground/80" title={r.preferred_location ?? undefined}>
+                    {r.preferred_location ?? <span className="text-muted-foreground">Not available</span>}
+                  </Td>
+                  <Td>
+                    <div className="flex flex-col gap-0.5 text-xs leading-tight">
+                      {r.phone && <span className="inline-flex items-center gap-1 text-foreground/80"><Phone className="h-3 w-3 text-muted-foreground" />{r.phone}</span>}
+                      {r.email && <span className="inline-flex items-center gap-1 text-muted-foreground" title={r.email}><Mail className="h-3 w-3" />{truncate(r.email, 22)}</span>}
+                    </div>
+                  </Td>
+                  <Td className="pr-4 text-right">
+                    <MoveToMenu candidateIds={[r.candidate_id]} currentCategory={r.category} variant="icon" />
+                  </Td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       {selected.size > 0 && (
-        <div className="fixed inset-x-0 bottom-4 z-40 mx-auto flex w-fit flex-wrap items-center gap-3 rounded-full border border-border bg-card px-4 py-2 shadow-lg">
-          <span className="text-sm">{selected.size} selected</span>
-          <Button variant="ghost" size="sm" onClick={clear} aria-label="Clear selection">
+        <div className="fixed inset-x-4 bottom-4 z-40 mx-auto flex w-fit max-w-[calc(100vw-2rem)] flex-wrap items-center gap-3 rounded-full border border-border bg-white px-4 py-2 shadow-card-hover ring-1 ring-black/5">
+          <span className="text-sm font-medium">{selected.size} selected</span>
+          <Button variant="ghost" size="sm" onClick={clear} aria-label="Clear selection" className="h-7 w-7 p-0">
             <X className="h-4 w-4" />
           </Button>
+          <span className="h-5 w-px bg-border" />
           <MoveToMenu candidateIds={Array.from(selected)} variant="button" onMoved={clear} />
           <Button variant="destructive" size="sm" onClick={() => setConfirmOpen(true)}>
-            <Trash2 className="mr-1 h-4 w-4" /> Delete selected
+            <Trash2 className="mr-1 h-4 w-4" /> Delete
           </Button>
         </div>
       )}
@@ -167,16 +211,20 @@ export function CandidateTable({ rows }: { rows: CandidateRow[] }) {
 
 export function CategoryBadge({ value }: { value: CandidateCategory }) {
   switch (value) {
-    case "active":      return <Badge variant="online">Active</Badge>;
-    case "talent_pool": return <Badge variant="outline" className="border-sky-500/40 text-sky-300">Talent Pool</Badge>;
+    case "active":      return <Badge variant="success">Active</Badge>;
+    case "talent_pool": return <Badge variant="info">Talent Pool</Badge>;
     case "archived":    return <Badge variant="offline">Archived</Badge>;
-    case "duplicate":   return <Badge variant="outline" className="border-amber-500/40 text-amber-300">Duplicate</Badge>;
+    case "duplicate":   return <Badge variant="warning">Duplicate</Badge>;
   }
 }
 
 function Th({ className, children }: React.HTMLAttributes<HTMLTableCellElement>) {
-  return <th className={"whitespace-nowrap px-3 py-2 text-left font-semibold " + (className ?? "")}>{children}</th>;
+  return <th className={cn("whitespace-nowrap px-3 py-3 text-left", className)}>{children}</th>;
 }
-function Td({ className, children }: React.HTMLAttributes<HTMLTableCellElement>) {
-  return <td className={"whitespace-nowrap px-3 py-2 " + (className ?? "")}>{children}</td>;
+function Td({ className, children, title }: React.HTMLAttributes<HTMLTableCellElement>) {
+  return <td className={cn("whitespace-nowrap px-3 py-2.5 align-middle", className)} title={title}>{children}</td>;
+}
+
+function truncate(s: string, n: number) {
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }

@@ -41,15 +41,32 @@ const config: Config = {
           foreground: "hsl(var(--card-foreground))"
         },
         brand: {
-          DEFAULT: "hsl(8 81% 56%)",     /* #E94B35 */
-          dark: "hsl(8 68% 47%)",        /* hover */
-          header: "hsl(0 0% 4%)"         /* black */
+          DEFAULT: "hsl(0 84% 60%)",       /* #EF4444 red-500 */
+          dark: "hsl(0 72% 51%)",          /* red-600 hover */
+          header: "hsl(222 47% 11%)",      /* slate-900 */
+          subheader: "hsl(210 40% 96%)"    /* slate-100 */
+        },
+        surface: {
+          DEFAULT: "hsl(var(--surface-elevated, 0 0% 100%))",
+          sunken: "hsl(var(--surface-sunken, 210 40% 96%))"
+        },
+        sidebar: {
+          DEFAULT: "hsl(var(--sidebar))",
+          foreground: "hsl(var(--sidebar-foreground))",
+          muted: "hsl(var(--sidebar-muted))",
+          border: "hsl(var(--sidebar-border))",
+          hover: "hsl(var(--sidebar-hover))"
         }
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)"
+      },
+      boxShadow: {
+        card: "0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06)",
+        "card-hover": "0 4px 12px -2px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.04)",
+        "header": "0 1px 0 0 rgb(15 23 42 / 0.06)"
       },
       keyframes: {
         "accordion-down": { from: { height: "0" }, to: { height: "var(--radix-accordion-content-height)" } },
