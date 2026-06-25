@@ -102,8 +102,8 @@ export function JobDashboardTab({ jobId, job, funnel, team, upcomingInterviews }
             </Link>
           </header>
           {job.description ? (
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground line-clamp-6">
-              {job.description}
+            <p className="text-sm leading-relaxed text-muted-foreground line-clamp-6">
+              {stripHtml(job.description)}
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">No description provided yet.</p>
@@ -157,6 +157,10 @@ function KpiTile({ label, value, icon: Icon, tone, sublabel, sublabelTone }: {
       )}
     </div>
   );
+}
+
+function stripHtml(html: string) {
+  return html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function TeamGroup({ label, members }: { label: string; members: TeamMember[] }) {

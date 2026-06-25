@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Pencil, MapPin, Briefcase, IndianRupee, Eye, Building2, Calendar, Users, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { RichTextView } from "@/components/ui/rich-text-editor";
 import { formatDate } from "@/lib/utils";
 
 interface Props {
@@ -45,9 +46,7 @@ export function JobDescriptionTab({ jobId, job }: Props) {
         </header>
 
         {job.description ? (
-          <article className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
-            {job.description}
-          </article>
+          <RichTextView html={job.description} />
         ) : (
           <div className="rounded-md border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
             No description yet. <Link href={`/jobs/${jobId}/edit`} className="text-primary hover:underline">Add one</Link>.

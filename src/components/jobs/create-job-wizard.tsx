@@ -5,8 +5,8 @@ import { X, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast";
@@ -194,8 +194,13 @@ export function CreateJobWizard({
               </div>
 
               <div>
-                <Label htmlFor="desc">Job description <span className="text-rose-400">*</span></Label>
-                <Textarea id="desc" rows={12} placeholder="Enter job description" value={form.description} onChange={(e) => update("description", e.target.value)} />
+                <Label>Job description <span className="text-rose-400">*</span></Label>
+                <RichTextEditor
+                  value={form.description}
+                  onChange={(html) => update("description", html)}
+                  placeholder="Describe the role, responsibilities, requirements…"
+                  minHeight={280}
+                />
               </div>
 
               <div>

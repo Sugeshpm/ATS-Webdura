@@ -5,8 +5,8 @@ import { ChevronLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/components/ui/toast";
@@ -214,7 +214,12 @@ export function EditJobForm({ initial, departments, locations, businessUnits }: 
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
             <Label>Description</Label>
-            <Textarea rows={10} value={f.description ?? ""} onChange={(e) => u("description", e.target.value)} />
+            <RichTextEditor
+              value={f.description ?? ""}
+              onChange={(html) => u("description", html)}
+              placeholder="Describe the role, responsibilities, requirements…"
+              minHeight={240}
+            />
           </div>
           <div className="space-y-1.5">
             <Label>Skills</Label>
