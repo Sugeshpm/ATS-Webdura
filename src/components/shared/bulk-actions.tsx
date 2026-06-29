@@ -17,7 +17,7 @@ export function BulkActions({ kind, exportQuery = "" }: Props) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [pending, setPending] = React.useState(false);
-  const [result, setResult] = React.useState<{ inserted: number; skipped: number; failures?: string[] } | null>(null);
+  const [result, setResult] = React.useState<{ inserted: number; skipped: number; resumes_uploaded?: number; failures?: string[] } | null>(null);
 
   async function upload(file: File) {
     setPending(true);
@@ -85,8 +85,11 @@ export function BulkActions({ kind, exportQuery = "" }: Props) {
 
             {result && (
               <div className="rounded-md border border-border p-3 text-sm">
-                <div>Inserted: <span className="font-medium text-emerald-300">{result.inserted}</span></div>
-                <div>Skipped: <span className="font-medium text-amber-300">{result.skipped}</span></div>
+                <div>Inserted: <span className="font-medium text-emerald-600">{result.inserted}</span></div>
+                <div>Skipped: <span className="font-medium text-amber-600">{result.skipped}</span></div>
+                {typeof result.resumes_uploaded === "number" && (
+                  <div>Resumes uploaded: <span className="font-medium text-sky-600">{result.resumes_uploaded}</span></div>
+                )}
                 {result.failures?.length ? (
                   <details className="mt-2">
                     <summary className="cursor-pointer text-xs text-muted-foreground">Show {result.failures.length} reason{result.failures.length === 1 ? "" : "s"}</summary>

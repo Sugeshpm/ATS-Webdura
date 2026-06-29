@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { createClient } from "@/lib/supabase/server";
 import { num, parseCsv } from "@/lib/csv";
 
@@ -24,12 +26,41 @@ interface CandidateCsvRow {
   github_url?: string;
   portfolio_url?: string;
   skills?: string;
+  /** Path under `public/Resumes/` (case-insensitive header). */
+  Resume?: string;
+  resume?: string;
+}
+
+const PUBLIC_RESUMES_ROOT = path.join(process.cwd(), "public", "Resumes");
+
+function mimeForExt(filename: string): string {
+  const ext = filename.toLowerCase().split(".").pop() ?? "";
+  switch (ext) {
+    case "pdf":  return "application/pdf";
+    case "doc":  return "application/msword";
+    case "docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case "rtf":  return "application/rtf";
+    case "txt":  return "text/plain";
+    default:     return "application/octet-stream";
+  }
+}
+
+/** Safely resolve a CSV-supplied path under public/Resumes. Returns null if traversal detected. */
+function resolveResumePath(rel: string): string | null {
+  const cleaned = rel.replace(/^[\\/]+/, "").replace(/\\/g, "/").trim();
+  if (!cleaned || cleaned.includes("..")) return null;
+  const abs = path.join(PUBLIC_RESUMES_ROOT, cleaned);
+  // Ensure it stays inside the Resumes root
+  const normRoot = path.resolve(PUBLIC_RESUMES_ROOT);
+  const normAbs = path.resolve(abs);
+  if (!normAbs.startsWith(normRoot)) return null;
+  return normAbs;
 }
 
 export async function POST(req: Request) {
   const formData = await req.formData();
   const file = formData.get("file");
-  const fallbackJobId = String(formData.get("job_id") ?? ""); // optional override
+  const fallbackJobId = String(formData.get("job_id") ?? "");
   if (!(file instanceof File)) return Response.json({ error: "No file uploaded." }, { status: 400 });
 
   const text = await file.text();
@@ -52,6 +83,7 @@ export async function POST(req: Request) {
 
   let inserted = 0;
   let skipped = 0;
+  let resumesUploaded = 0;
   const failures: string[] = [];
 
   for (const r of rows) {
@@ -85,11 +117,12 @@ export async function POST(req: Request) {
     } as never).select("id").single();
 
     if (cErr || !cand) { skipped++; failures.push(`${r.first_name}: ${cErr?.message ?? "insert failed"}`); continue; }
+    const candidateId = (cand as { id: string }).id;
 
     // 2. Application link to the job
     const { error: aErr } = await supabase.from("applications").insert({
       tenant_id: me.tenant_id,
-      candidate_id: (cand as { id: string }).id,
+      candidate_id: candidateId,
       job_id: jobId,
       current_stage_id: sourcedStageId,
       applied_via: "csv_import",
@@ -97,7 +130,7 @@ export async function POST(req: Request) {
     });
     if (aErr) { failures.push(`${r.first_name}: candidate saved but link to job failed (${aErr.message})`); continue; }
 
-    // 3. Skills
+    // 3. Skills (semicolon-separated)
     if (r.skills) {
       const skillNames = r.skills.split(";").map((s) => s.trim()).filter(Boolean);
       if (skillNames.length) {
@@ -111,7 +144,55 @@ export async function POST(req: Request) {
         }
         const all = [...(existing ?? []), ...ins] as { id: string }[];
         if (all.length) {
-          await supabase.from("candidate_skills").insert(all.map((s) => ({ candidate_id: (cand as { id: string }).id, skill_id: s.id })));
+          await supabase.from("candidate_skills").insert(all.map((s) => ({ candidate_id: candidateId, skill_id: s.id })));
+        }
+      }
+    }
+
+    // 4. Resume: read from public/Resumes, upload to Storage, link via documents row.
+    const resumeRel = (r.Resume ?? r.resume ?? "").trim();
+    if (resumeRel) {
+      const absPath = resolveResumePath(resumeRel);
+      if (!absPath) {
+        failures.push(`${r.first_name}: resume path looks unsafe ("${resumeRel}") — skipped.`);
+      } else {
+        try {
+          const buffer = await fs.readFile(absPath);
+          const fileName = path.basename(absPath);
+          const mime = mimeForExt(fileName);
+          const storagePath = `${me.tenant_id}/${candidateId}/${Date.now()}-${fileName}`;
+
+          const { error: upErr } = await supabase.storage
+            .from("resumes")
+            .upload(storagePath, buffer, { contentType: mime, upsert: false });
+
+          if (upErr) {
+            failures.push(`${r.first_name}: resume upload failed (${upErr.message})`);
+          } else {
+            const { error: docErr } = await supabase.from("documents").insert({
+              tenant_id: me.tenant_id,
+              candidate_id: candidateId,
+              kind: "resume",
+              name: fileName,
+              mime,
+              size_bytes: buffer.length,
+              storage_bucket: "resumes",
+              storage_path: storagePath,
+              uploaded_by: user.id
+            } as never);
+            if (docErr) {
+              failures.push(`${r.first_name}: resume uploaded but link failed (${docErr.message})`);
+            } else {
+              resumesUploaded++;
+            }
+          }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes("ENOENT")) {
+            failures.push(`${r.first_name}: resume not found at public/Resumes/${resumeRel}`);
+          } else {
+            failures.push(`${r.first_name}: resume read failed (${msg})`);
+          }
         }
       }
     }
@@ -119,5 +200,5 @@ export async function POST(req: Request) {
     inserted++;
   }
 
-  return Response.json({ inserted, skipped, failures: failures.slice(0, 20) });
+  return Response.json({ inserted, skipped, resumes_uploaded: resumesUploaded, failures: failures.slice(0, 30) });
 }
