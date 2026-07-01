@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { bool, num, parseCsv } from "@/lib/csv";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 interface JobCsvRow {
   title?: string;

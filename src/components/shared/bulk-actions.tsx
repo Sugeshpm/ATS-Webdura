@@ -23,26 +23,36 @@ interface FailedRow {
 interface FinalResult {
   inserted: number;
   skipped: number;
-  resumes_uploaded?: number;
-  total?: number;
+  resumes_uploaded: number;
+  total: number;
 }
 
-type Phase = "idle" | "uploading" | "streaming" | "done" | "error";
+type Phase = "idle" | "parsing" | "streaming" | "done" | "error";
+
+// Client-side chunk size. Each chunk is one HTTP request to the import endpoint
+// so it must complete inside Vercel's serverless timeout (~60s Hobby, ~300s Pro).
+// 100 rows × ~500ms/row = ~50s — safe on Hobby with resume uploads.
+const CHUNK_SIZE = 100;
 
 export function BulkActions({ kind, exportQuery = "" }: Props) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [phase, setPhase] = React.useState<Phase>("idle");
   const [progress, setProgress] = React.useState<{ done: number; total: number }>({ done: 0, total: 0 });
+  const [chunkInfo, setChunkInfo] = React.useState<{ current: number; total: number }>({ current: 0, total: 0 });
   const [currentName, setCurrentName] = React.useState<string>("");
   const [result, setResult] = React.useState<FinalResult | null>(null);
   const [failedRows, setFailedRows] = React.useState<FailedRow[]>([]);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = React.useState<File | null>(null);
+  const abortRef = React.useRef<AbortController | null>(null);
 
   function reset() {
+    abortRef.current?.abort();
+    abortRef.current = null;
     setPhase("idle");
     setProgress({ done: 0, total: 0 });
+    setChunkInfo({ current: 0, total: 0 });
     setCurrentName("");
     setResult(null);
     setFailedRows([]);
@@ -52,105 +62,149 @@ export function BulkActions({ kind, exportQuery = "" }: Props) {
 
   async function upload(file: File) {
     reset();
-    setPhase("uploading");
     setUploadedFile(file);
+    setPhase("parsing");
 
-    const fd = new FormData();
-    fd.append("file", file);
-
-    let res: Response;
-    try {
-      res = await fetch(`/api/${kind}/import`, { method: "POST", body: fd });
-    } catch (e) {
+    const text = await file.text();
+    const parsed = Papa.parse<Record<string, string>>(text, { header: true, skipEmptyLines: true });
+    if (parsed.errors.length) {
       setPhase("error");
-      setErrorMsg(e instanceof Error ? e.message : "Network error.");
-      toast.error("Import request failed.");
+      setErrorMsg("CSV parse errors: " + parsed.errors.slice(0, 3).map((e) => e.message).join("; "));
       return;
     }
 
-    const contentType = res.headers.get("content-type") ?? "";
-    if (!res.ok || !contentType.includes("ndjson")) {
-      const data = await res.json().catch(() => ({} as { error?: string; details?: string[] }));
+    const rows = parsed.data ?? [];
+    const headers = parsed.meta.fields ?? [];
+    if (!rows.length) {
       setPhase("error");
-      setErrorMsg(data.error ?? "Import failed.");
-      if (data.details?.length) {
-        setFailedRows(data.details.map((r, i) => ({ index: i, name: `Row ${i + 1}`, status: "fail", reason: r })));
-      }
-      toast.error(data.error ?? "Import failed.");
+      setErrorMsg("The CSV is empty.");
       return;
     }
 
-    if (!res.body) {
-      setPhase("error");
-      setErrorMsg("Empty response.");
-      return;
-    }
-
+    setProgress({ done: 0, total: rows.length });
+    const chunkCount = Math.ceil(rows.length / CHUNK_SIZE);
+    setChunkInfo({ current: 0, total: chunkCount });
     setPhase("streaming");
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
 
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let nl: number;
-        while ((nl = buffer.indexOf("\n")) !== -1) {
-          const line = buffer.slice(0, nl).trim();
-          buffer = buffer.slice(nl + 1);
-          if (!line) continue;
-          try {
-            handleEvent(JSON.parse(line));
-          } catch {
-            /* ignore malformed lines */
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const totals = { inserted: 0, skipped: 0, resumes_uploaded: 0 };
+
+    for (let c = 0; c < chunkCount; c++) {
+      if (controller.signal.aborted) break;
+
+      setChunkInfo({ current: c + 1, total: chunkCount });
+      const start = c * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, rows.length);
+      const chunkRows = rows.slice(start, end);
+
+      const chunkCsv = Papa.unparse({
+        fields: headers,
+        data: chunkRows.map((r) => headers.map((h) => r[h] ?? ""))
+      });
+
+      const chunkFile = new File([chunkCsv], `chunk-${c}.csv`, { type: "text/csv" });
+      const fd = new FormData();
+      fd.append("file", chunkFile);
+
+      let res: Response;
+      try {
+        res = await fetch(`/api/${kind}/import`, { method: "POST", body: fd, signal: controller.signal });
+      } catch (e) {
+        if ((e as Error).name === "AbortError") return;
+        setPhase("error");
+        setErrorMsg(`Batch ${c + 1}/${chunkCount} network error: ${e instanceof Error ? e.message : String(e)}`);
+        return;
+      }
+
+      const contentType = res.headers.get("content-type") ?? "";
+      if (!res.ok || !contentType.includes("ndjson")) {
+        const data = await res.json().catch(() => ({} as { error?: string; details?: string[] }));
+        setPhase("error");
+        setErrorMsg(`Batch ${c + 1}/${chunkCount}: ${data.error ?? res.statusText}`);
+        return;
+      }
+      if (!res.body) {
+        setPhase("error");
+        setErrorMsg("Empty response.");
+        return;
+      }
+
+      // Read this chunk's NDJSON stream and translate indexes back to global row index.
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let nl: number;
+          while ((nl = buffer.indexOf("\n")) !== -1) {
+            const line = buffer.slice(0, nl).trim();
+            buffer = buffer.slice(nl + 1);
+            if (!line) continue;
+            try {
+              const evt = JSON.parse(line);
+              handleEvent(evt, start, totals);
+            } catch { /* ignore malformed lines */ }
           }
         }
+      } catch (e) {
+        if ((e as Error).name === "AbortError") return;
+        setPhase("error");
+        setErrorMsg(`Batch ${c + 1}/${chunkCount} stream broken: ${e instanceof Error ? e.message : String(e)}`);
+        return;
       }
-    } catch (e) {
-      setPhase("error");
-      setErrorMsg(e instanceof Error ? e.message : "Stream broken.");
-      toast.error("Import interrupted.");
     }
+
+    // All chunks done — publish final tally.
+    setResult({
+      inserted: totals.inserted,
+      skipped: totals.skipped,
+      resumes_uploaded: totals.resumes_uploaded,
+      total: rows.length
+    });
+    setPhase("done");
+    setProgress((p) => ({ done: rows.length, total: p.total || rows.length }));
+    toast.success(`Imported ${totals.inserted} · Skipped ${totals.skipped}${
+      kind === "candidates" ? ` · Resumes: ${totals.resumes_uploaded}` : ""
+    }`);
+    router.refresh();
   }
 
-  function handleEvent(evt: { type: string; [k: string]: unknown }) {
-    if (evt.type === "start") {
-      setProgress({ done: 0, total: Number(evt.total) || 0 });
-    } else if (evt.type === "row") {
-      const idx = Number(evt.index) || 0;
-      setProgress((p) => ({ done: idx + 1, total: p.total || idx + 1 }));
+  function handleEvent(
+    evt: { type: string; [k: string]: unknown },
+    offset: number,
+    totals: { inserted: number; skipped: number; resumes_uploaded: number }
+  ) {
+    if (evt.type === "row") {
+      const localIdx = Number(evt.index) || 0;
+      const globalIdx = offset + localIdx;
+      setProgress((p) => ({ done: Math.max(p.done, globalIdx + 1), total: p.total }));
       if (typeof evt.name === "string") setCurrentName(evt.name);
-      if (evt.status === "skip" || evt.status === "fail") {
+      if (evt.status === "ok") {
+        // Inserted counted at done event too — no-op here
+      } else if (evt.status === "skip" || evt.status === "fail") {
         setFailedRows((prev) => [
           ...prev,
           {
-            index: idx,
-            name: String(evt.name ?? `Row ${idx + 1}`),
+            index: globalIdx,
+            name: String(evt.name ?? `Row ${globalIdx + 1}`),
             status: evt.status as "skip" | "fail",
             reason: String(evt.reason ?? "Unknown reason")
           }
         ]);
       }
     } else if (evt.type === "done") {
-      const final: FinalResult = {
-        inserted: Number(evt.inserted) || 0,
-        skipped: Number(evt.skipped) || 0,
-        resumes_uploaded: typeof evt.resumes_uploaded === "number" ? evt.resumes_uploaded : undefined,
-        total: Number(evt.total) || 0
-      };
-      setResult(final);
-      setPhase("done");
-      setProgress((p) => ({ done: p.total, total: p.total }));
-      toast.success(`Imported ${final.inserted} · Skipped ${final.skipped}${
-        typeof final.resumes_uploaded === "number" ? ` · Resumes: ${final.resumes_uploaded}` : ""
-      }`);
-      router.refresh();
+      totals.inserted += Number(evt.inserted) || 0;
+      totals.skipped += Number(evt.skipped) || 0;
+      totals.resumes_uploaded += typeof evt.resumes_uploaded === "number" ? evt.resumes_uploaded : 0;
     }
   }
 
-  /** Re-parse the original CSV, keep only failed row indexes, add a failure_reason column. */
   async function downloadFailedRows() {
     if (!uploadedFile || failedRows.length === 0) return;
     const text = await uploadedFile.text();
@@ -161,10 +215,10 @@ export function BulkActions({ kind, exportQuery = "" }: Props) {
     const reasonByIndex = new Map(failedRows.map((f) => [f.index, f.reason]));
     const failedIndexes = failedRows.map((f) => f.index).sort((a, b) => a - b);
 
-    const outRows = failedIndexes.map((i) => {
-      const row = originalRows[i] ?? {};
-      return { ...row, failure_reason: reasonByIndex.get(i) ?? "" };
-    });
+    const outRows = failedIndexes.map((i) => ({
+      ...(originalRows[i] ?? {}),
+      failure_reason: reasonByIndex.get(i) ?? ""
+    }));
 
     const csv = Papa.unparse({
       fields: [...headers, "failure_reason"],
@@ -184,7 +238,7 @@ export function BulkActions({ kind, exportQuery = "" }: Props) {
 
   const label = kind === "jobs" ? "Jobs" : "Candidates";
   const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
-  const isBusy = phase === "uploading" || phase === "streaming";
+  const isBusy = phase === "parsing" || phase === "streaming";
 
   return (
     <div className="flex items-center gap-2">
@@ -204,7 +258,7 @@ export function BulkActions({ kind, exportQuery = "" }: Props) {
           <DialogHeader>
             <DialogTitle>Bulk import {label.toLowerCase()}</DialogTitle>
             <DialogDescription>
-              Upload a CSV. New rows are inserted; nothing is deleted.
+              Upload a CSV. Large files are automatically split into batches of {CHUNK_SIZE} rows so nothing times out.
               {kind === "candidates" && " Resume paths in the CSV are uploaded to Storage."}
             </DialogDescription>
           </DialogHeader>
@@ -231,12 +285,16 @@ export function BulkActions({ kind, exportQuery = "" }: Props) {
               />
             </label>
 
-            {/* Progress area */}
+            {/* Progress */}
             {isBusy && (
               <div className="rounded-md border border-border bg-surface-sunken p-3">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-medium">
-                    {phase === "uploading" ? "Uploading…" : `Processing rows`}
+                    {phase === "parsing"
+                      ? "Parsing CSV…"
+                      : chunkInfo.total > 1
+                        ? `Batch ${chunkInfo.current} of ${chunkInfo.total}`
+                        : "Processing rows"}
                   </span>
                   <span className="tabular-nums text-muted-foreground">
                     {progress.total > 0 ? `${progress.done} / ${progress.total} (${pct}%)` : "…"}
@@ -247,11 +305,19 @@ export function BulkActions({ kind, exportQuery = "" }: Props) {
                   <span className="truncate">{uploadedFile?.name}</span>
                   {currentName && <span className="truncate italic">→ {currentName}</span>}
                 </div>
-                {failedRows.length > 0 && (
-                  <div className="mt-2 inline-flex items-center gap-1 text-[11px] text-amber-700">
-                    <AlertTriangle className="h-3 w-3" /> {failedRows.length} row{failedRows.length === 1 ? "" : "s"} failed so far
-                  </div>
-                )}
+                <div className="mt-2 flex items-center justify-between gap-2 text-[11px]">
+                  {failedRows.length > 0 && (
+                    <span className="inline-flex items-center gap-1 text-amber-700">
+                      <AlertTriangle className="h-3 w-3" /> {failedRows.length} failed so far
+                    </span>
+                  )}
+                  <button
+                    onClick={() => { abortRef.current?.abort(); reset(); }}
+                    className="ml-auto text-muted-foreground hover:text-foreground"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             )}
 
@@ -265,7 +331,7 @@ export function BulkActions({ kind, exportQuery = "" }: Props) {
                 <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-emerald-900/90">
                   <div>Inserted: <span className="font-semibold">{result.inserted}</span></div>
                   <div>Skipped: <span className="font-semibold">{result.skipped}</span></div>
-                  {typeof result.resumes_uploaded === "number" && (
+                  {kind === "candidates" && (
                     <div className="col-span-2">Resumes uploaded: <span className="font-semibold">{result.resumes_uploaded}</span></div>
                   )}
                 </div>
@@ -280,13 +346,9 @@ export function BulkActions({ kind, exportQuery = "" }: Props) {
               </div>
             )}
 
-            {/* Failed rows panel — shown whenever we have any failures, in success OR error phase */}
+            {/* Failed rows */}
             {(phase === "done" || phase === "error") && failedRows.length > 0 && (
-              <FailedRowsPanel
-                rows={failedRows}
-                canDownload={!!uploadedFile}
-                onDownload={downloadFailedRows}
-              />
+              <FailedRowsPanel rows={failedRows} canDownload={!!uploadedFile} onDownload={downloadFailedRows} />
             )}
 
             {/* Error */}
@@ -320,7 +382,6 @@ function FailedRowsPanel({
   canDownload: boolean;
   onDownload: () => void;
 }) {
-  // Group by reason for a quick summary
   const summary = React.useMemo(() => {
     const m = new Map<string, number>();
     for (const r of rows) m.set(r.reason, (m.get(r.reason) ?? 0) + 1);
@@ -343,7 +404,6 @@ function FailedRowsPanel({
         )}
       </div>
 
-      {/* Reason summary */}
       <div className="mt-2 flex flex-wrap gap-1.5">
         {summary.slice(0, 6).map(([reason, count]) => (
           <span key={reason} className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[11px] text-amber-800">
@@ -352,7 +412,6 @@ function FailedRowsPanel({
         ))}
       </div>
 
-      {/* Full list — scrollable */}
       <div className="mt-3 max-h-64 overflow-auto rounded border border-amber-200 bg-white">
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-amber-100/80 backdrop-blur">
@@ -375,7 +434,7 @@ function FailedRowsPanel({
       </div>
 
       <p className="mt-2 text-[11px] text-amber-700">
-        Fix the flagged rows in the downloaded CSV (the <code>failure_reason</code> column shows what to correct), delete the <code>failure_reason</code> column, then re-upload.
+        Fix the flagged rows in the downloaded CSV (the <code>failure_reason</code> column tells you what to correct), delete the <code>failure_reason</code> column, then re-upload.
       </p>
     </div>
   );

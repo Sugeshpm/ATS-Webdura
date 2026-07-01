@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { num, parseCsv } from "@/lib/csv";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;   // Pro plan cap; hobby will still use 60s
 
 interface CandidateCsvRow {
   first_name?: string;
