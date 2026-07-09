@@ -43,11 +43,11 @@ export async function POST(req: Request) {
   try { token = decrypt(enc); }
   catch (e) { return NextResponse.json({ error: `decrypt failed: ${(e as Error).message}` }, { status: 500 }); }
 
-  const since = body.since_iso
-    ? new Date(body.since_iso)
-    : (form as { last_synced_at: string | null }).last_synced_at
-      ? new Date((form as { last_synced_at: string }).last_synced_at)
-      : undefined;
+  // "Sync now" pulls ALL leads for the form — the skip/dedup logic below prevents
+  // duplicates and lets deleted candidates be recreated. Only an explicit since_iso
+  // narrows the window (e.g. a future incremental cron). Using last_synced_at here
+  // would make re-syncs fetch nothing once the first sync stamps it.
+  const since = body.since_iso ? new Date(body.since_iso) : undefined;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
