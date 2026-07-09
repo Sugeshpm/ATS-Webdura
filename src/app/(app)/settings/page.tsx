@@ -12,14 +12,16 @@ export default async function SettingsPage() {
     { count: locCount },
     { count: stageCount },
     { count: userCount },
-    { count: tplCount }
+    { count: tplCount },
+    { count: metaFormsCount }
   ] = await Promise.all([
     supabase.from("tenants").select("name, slug, time_zone").single(),
     supabase.from("departments").select("id", { count: "exact", head: true }).eq("is_archived", false),
     supabase.from("locations").select("id", { count: "exact", head: true }).eq("is_archived", false),
     supabase.from("stages").select("id", { count: "exact", head: true }).eq("is_archived", false),
     supabase.from("profiles").select("id", { count: "exact", head: true }),
-    supabase.from("templates").select("id", { count: "exact", head: true })
+    supabase.from("templates").select("id", { count: "exact", head: true }),
+    supabase.from("meta_lead_forms").select("id", { count: "exact", head: true }).eq("is_active", true)
   ]);
 
   const cards = [
@@ -28,7 +30,8 @@ export default async function SettingsPage() {
     { href: "/settings/departments",  title: "Departments",   desc: `${deptCount ?? 0} department${deptCount === 1 ? "" : "s"}` },
     { href: "/settings/locations",    title: "Locations",     desc: `${locCount ?? 0} location${locCount === 1 ? "" : "s"}` },
     { href: "/settings/stages",       title: "Pipeline stages", desc: `${stageCount ?? 0} active stage${stageCount === 1 ? "" : "s"}` },
-    { href: "/settings/templates",    title: "Templates",     desc: `${tplCount ?? 0} template${tplCount === 1 ? "" : "s"} — email, WhatsApp, offer letter, scorecards` }
+    { href: "/settings/templates",    title: "Templates",     desc: `${tplCount ?? 0} template${tplCount === 1 ? "" : "s"} — email, WhatsApp, offer letter, scorecards` },
+    { href: "/settings/integrations", title: "Integrations",  desc: `Meta Lead Ads · ${metaFormsCount ?? 0} form${(metaFormsCount ?? 0) === 1 ? "" : "s"} connected` }
   ];
 
   return (

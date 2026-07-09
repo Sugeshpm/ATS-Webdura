@@ -259,6 +259,11 @@ Set in `.env.local` (dev) and Vercel Project Settings (prod). See `.env.local.ex
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Client-safe anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only. Used **only** in `src/lib/supabase/admin.ts` for invite flows. **Never expose to client.** |
 | `NEXT_PUBLIC_SITE_URL` | e.g. `https://ats-webdura.vercel.app` — used in signup/invite redirects |
+| `META_APP_ID` | Public app ID from Meta developer dashboard (Lead Ads integration) |
+| `META_APP_SECRET` | **Secret** — used to verify webhook HMAC (`X-Hub-Signature-256`) |
+| `META_WEBHOOK_VERIFY_TOKEN` | **Secret** — echoed during Meta's webhook handshake |
+| `META_ENCRYPTION_KEY` | **Secret** — 32-byte hex key for AES-256-GCM encryption of Page access tokens at rest |
+| `META_GRAPH_API_VERSION` | Default `v20.0` — overridable when Meta rolls forward |
 
 Supabase Auth → URL Configuration must include the site URL and `/auth/callback` in Redirect URLs, or Supabase refuses the redirect after invite acceptance.
 

@@ -71,10 +71,9 @@ Small items that would improve Phase 1 UX without adding scope. Pick up opportun
 
 ---
 
-## Phase 2 — Advanced (outline)
+## Phase 2 — Advanced
 
-Detail expanded when Phase 2 starts. Rough scope list:
-
+- [x] **Meta (Facebook + Instagram) Lead Ads integration** — real-time webhook + manual sync + admin UI. See [META_LEAD_ADS_PLAN.md](./META_LEAD_ADS_PLAN.md). Requires migration `20260623000013_meta_integration.sql` + env vars `META_APP_ID`, `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`, `META_ENCRYPTION_KEY`. Requires Meta App Review for `leads_retrieval` before production use.
 - [ ] Interview scheduling (schedule dialog, ICS email invites, reminder cron)
 - [ ] Feedback scorecards + templates
 - [ ] Kanban view per job (drag-drop stages)
@@ -129,6 +128,11 @@ Chronological. Add a row every time a non-obvious call is made.
 
 | Decision | Rationale |
 |----------|-----------|
+| Meta Lead Ads: paste-token flow first, OAuth later | Faster to ship; only one Webdura Page to connect. OAuth adds review complexity for a single-tenant deployment. |
+| Meta Lead Ads: dedupe candidates on (tenant, email) | Prevents duplicate profiles when same person applies to multiple Meta forms. Second application row instead. |
+| Meta Lead Ads: form → single job mapping | Simplest UX. Recruiters create one form per job. Custom-question routing is Phase 2.5 if needed. |
+| Meta Lead Ads: custom question storage in `meta_leads_raw.raw_payload` | Flexible JSONB absorbs form-by-form variation without schema changes. Recruiters view them in the leads log. |
+| Meta Lead Ads: AES-256-GCM at rest for Page access tokens | Tokens are 60-day bearer credentials with `leads_retrieval` scope. `META_ENCRYPTION_KEY` env var required. |
 | Next.js 15 App Router over 14 / Pages Router | Server Actions + Server Components are core to how the app fetches + mutates. Also matches Webdura platform strategy. |
 | Supabase over Firebase / raw Postgres + Auth0 | Free tier is generous, `@supabase/ssr` integrates with Next 15 cleanly, RLS is first-class. |
 | Multi-tenant schema for a single-tenant product | Future-proofs the platform for hypothetical Webdura Group deployment without a schema migration. Cost is one extra column per table + RLS policies. |
