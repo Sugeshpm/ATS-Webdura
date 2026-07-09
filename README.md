@@ -1,169 +1,192 @@
-# Hiring Tracker
+# ATS-Webdura
 
-A multi-tenant Applicant Tracking System (ATS) built on **Next.js 15 (App Router)** + **Supabase** (Postgres + Auth + Storage + RLS).
+Applicant Tracking System for **Webdura Technologies**. Next.js 15 (App Router) + Supabase (Postgres + Auth + Storage + RLS). Deployed at [ats-webdura.vercel.app](https://ats-webdura.vercel.app).
 
-This repo is the Phase-1 MVP scaffold. See [../IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md) for the full SRS, ER, roadmap, and screen-by-screen feature spec.
+Phase 1 is live and in daily use. See [SPEC.md](./SPEC.md) for what shipped and what's next.
 
 ---
 
-## Quick start
+## The six documents
 
-### 1. Install dependencies
+Before touching this repo, read these in order:
 
-```powershell
-# from E:\HRM\app
-npm install     # or: pnpm install / bun install / yarn
+| # | File | Answers |
+|---|------|---------|
+| 1 | [BRIEF.md](./BRIEF.md) | Why does this exist? |
+| 2 | [ARCHITECTURE.md](./ARCHITECTURE.md) | How is it structured? |
+| 3 | [SPEC.md](./SPEC.md) | What exactly gets built? |
+| 4 | **README.md** (this file) | How do I run it? |
+| 5 | [CLAUDE.md](./CLAUDE.md) | What does the AI agent need to know? |
+| 6 | [STATUS.md](./STATUS.md) | Where are we right now? |
+
+---
+
+## Prerequisites
+
+- **Node.js 22 LTS** (managed via `nvm` recommended)
+- **npm 10+** (or pnpm / bun — commands below use npm)
+- **Git** (obviously)
+- **Supabase account** with a linked project. Ours is `rlspryfcbzmthiqbwsyz`.
+- **Vercel account** (only if you plan to deploy)
+- **Supabase CLI** — installs via `npm install` (it's a devDependency); invoke with `npx supabase`
+
+---
+
+## Setup — from `git clone` to running app
+
+### 1. Clone + install
+
+```bash
+git clone <this-repo>
+cd ATS-Webdura
+npm install
 ```
 
 ### 2. Configure environment
 
-Copy the env example and paste your Supabase project keys:
-
-```powershell
-copy .env.local.example .env.local
+```bash
+cp .env.local.example .env.local
 ```
 
 Open `.env.local` and fill in from **Supabase → Project Settings → API**:
 
-```
-NEXT_PUBLIC_SUPABASE_URL=https://YOUR-REF.supabase.co
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://<your-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon public key>
-SUPABASE_SERVICE_ROLE_KEY=<service role key>        # server-only, do not expose
-NEXT_PUBLIC_SITE_URL=http://localhost:3000
+SUPABASE_SERVICE_ROLE_KEY=<service role key>       # server-only; never exposed to client
+NEXT_PUBLIC_SITE_URL=http://localhost:3000          # or your Vercel URL in prod
 ```
 
-### 3. Apply migrations
+### 3. Apply Supabase migrations
 
-Install the Supabase CLI if you haven't:
+If you're joining a project that already has the schema deployed, skip to step 4. If you're setting up a fresh Supabase project, run all migrations:
 
-```powershell
-npm i -g supabase
+```bash
+# Link to your Supabase project
+export SUPABASE_ACCESS_TOKEN="sbp_…"   # from https://supabase.com/dashboard/account/tokens
+npx supabase link --project-ref <your-ref>
+
+# Push all migrations
+npx supabase db push
 ```
 
-Link to your existing cloud project (replace `<project-ref>`):
+Or paste each file from `supabase/migrations/` into the SQL editor manually.
 
-```powershell
-supabase login
-supabase link --project-ref <project-ref>
-supabase db push
-```
+### 4. Configure Supabase Auth URLs
 
-This runs the SQL in `supabase/migrations/` in order:
+In **Supabase → Auth → URL Configuration**:
 
-1. `…_init.sql`          — tenants, profiles, enums, signup trigger
-2. `…_org_setup.sql`     — departments, business units, locations, stages, skills, tags + default-stage seeder
-3. `…_jobs.sql`          — jobs, job_team, job_stage_config
-4. `…_candidates.sql`    — candidates, experiences, educations, skills, tags, applications, stage history
-5. `…_interactions.sql`  — interviews, panel, feedback, messages, notes, documents, notifications, audit
-6. `…_rls.sql`           — Row Level Security for all tables (multi-tenant isolation)
-7. `…_storage.sql`       — `resumes`, `documents`, `avatars` buckets + policies
-8. `…_views.sql`         — `v_jobs_with_counts` view, `move_application_stage` RPC, `job_funnel` RPC
+- **Site URL**: your Vercel domain (e.g. `https://ats-webdura.vercel.app`)
+- **Redirect URLs** (both):
+  - `https://ats-webdura.vercel.app/auth/callback`
+  - `https://ats-webdura.vercel.app/auth/callback?next=/reset-password`
 
-> All app reads/writes go through **the anon key + RLS**, so a session JWT is enough — no admin/service role on the client.
+Also add `http://localhost:3000/auth/callback` for local dev.
 
-### 4. Generate database TypeScript types
+### 5. (Optional) Regenerate typed schema
 
-```powershell
+```bash
 npm run db:types
 ```
 
-This overwrites `src/lib/types/database.ts` with types matching your live schema. The placeholder we shipped is good enough to compile, but the generated file is the source of truth.
+Overwrites `src/lib/types/database.ts` with real types generated from the live schema. The placeholder shipped here compiles fine, but the generated file gives full inference on nested selects.
 
-### 5. Run the app
+### 6. Run it
 
-```powershell
+```bash
 npm run dev
 ```
 
-Open http://localhost:3000 — you'll be redirected to `/login`. Click **Create an organisation** to register; the DB trigger spins up a tenant + admin profile for you.
+Open [localhost:3000](http://localhost:3000). You'll land on `/login`. If it's a fresh Supabase project, click **"Sign up for an account"** — the first-ever user is automatically made `super_admin` with `status='active'`.
 
 ---
 
-## What's wired in this scaffold
+## Development commands
 
-| Area | State |
-|------|-------|
-| Auth (email + password) via Supabase Auth | ✅ login, signup, forgot, reset, OAuth callback route |
-| Multi-tenant signup (creates tenant + admin profile via DB trigger) | ✅ |
-| RLS — every table isolated by `current_tenant_id()` | ✅ |
-| Confidential-job visibility (admins + assigned team only) | ✅ |
-| Dashboard with live KPI tiles | ✅ |
-| Active Jobs grid (matches Screenshot 1) | ✅ |
-| Create Job 4-step wizard (Description → Details → Team → Publish) | ✅ |
-| Candidates list with sub-tabs, sidebar, filter bar, table | ✅ |
-| Add Candidate side panel with resume upload to Storage | ✅ |
-| Candidate detail with stage-move RPC, notes rail, tabs | ✅ |
-| Job detail with stage-funnel via `job_funnel()` RPC | ✅ |
-| Stubs for Messages / Preboarding / Career Site / Apps | ✅ (link target, content in Phase 2) |
-| Settings shell | ✅ (sub-pages coming) |
-
-## Roadmap (next)
-
-- Resume parsing (Affinda / Rchilli) to autofill the Add Candidate form
-- Interview scheduling with Google/Outlook two-way sync
-- Email + WhatsApp messaging in candidate detail
-- Per-job kanban view + bulk actions
-- Feedback templates & scorecards
-- Public career site under `app/(public)/[tenantSlug]/...`
-- Reports: funnel by date range, source effectiveness, time-to-hire
-- Settings sub-pages: Users & roles, Departments, Locations, Stages, Templates
-
-See the full module table in [../IMPLEMENTATION_PLAN.md §4 and §9](../IMPLEMENTATION_PLAN.md).
+| Command | What it does |
+|---------|-------------|
+| `npm run dev` | Start Next.js dev server on port 3000 |
+| `npm run build` | Production build; must pass green before merging |
+| `npm run start` | Serve the production build locally |
+| `npm run lint` | `next lint` |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run db:push` | Apply pending Supabase migrations |
+| `npm run db:types` | Regenerate `src/lib/types/database.ts` from linked schema |
+| `npm run db:reset` | ⚠️ Reset the linked DB (local dev only) |
 
 ---
 
-## Project layout
+## Deploy
 
-```
-app/
-├─ src/
-│  ├─ app/
-│  │  ├─ (auth)/           login, signup, forgot, reset
-│  │  ├─ (app)/            authenticated routes (dashboard, jobs, candidates, ...)
-│  │  ├─ auth/callback/    OAuth/PKCE callback
-│  │  ├─ globals.css
-│  │  └─ layout.tsx
-│  ├─ components/
-│  │  ├─ ui/               shadcn-style primitives
-│  │  ├─ layout/           org header, top nav
-│  │  ├─ jobs/             job card, filter bar, create wizard
-│  │  └─ candidates/       sidebar, table, drawer, stage-move menu, notes rail
-│  ├─ lib/
-│  │  ├─ supabase/         client.ts, server.ts, middleware.ts
-│  │  ├─ types/            database.ts (generated)
-│  │  └─ utils.ts
-│  └─ hooks/
-├─ supabase/
-│  ├─ config.toml
-│  └─ migrations/          *.sql in order
-├─ middleware.ts           routes auth-gating
-├─ next.config.ts
-├─ tailwind.config.ts
-├─ package.json
-└─ .env.local              (gitignored; copy from .env.local.example)
+Auto-deploys from `main` to Vercel. To trigger a build manually:
+
+```bash
+vercel --prod
 ```
 
-## Tech choices
+Before merging to `main` verify `npm run build` completes green locally.
 
-- **Next.js 15 App Router** — server components for data fetching, server actions for forms
-- **TypeScript strict**
-- **TailwindCSS + shadcn-style primitives** — dark theme matching the reference product
-- **Supabase JS v2 + @supabase/ssr** — cookie-based session, works in middleware/RSC/client
-- **TanStack React Query** (installed, not yet used) — for client mutations & cache
-- **React Hook Form + Zod** (installed) — for richer forms
-- **Sonner** — toast notifications
-- **lucide-react** — icons
+---
 
-## Conventions
+## Repo structure
 
-- **Server-first**: data fetching lives in RSC pages (`page.tsx`); client components are leaves (forms, popovers, menus)
-- **No client-side Supabase admin calls** — all writes go through the user's session and respect RLS
-- **Tenant isolation** is enforced by RLS — `current_tenant_id()` is derived from `auth.uid()` → `profiles.tenant_id`
-- **Storage paths** follow `<tenant_id>/<candidate_id>/<filename>` so bucket policies can extract tenant from path
+```
+├── BRIEF · ARCHITECTURE · SPEC · CLAUDE · STATUS · README (docs — read first)
+├── middleware.ts                    (auth-gating for all routes)
+├── next.config.ts / tsconfig / tailwind.config.ts
+├── public/
+│   ├── images/logo.png
+│   ├── Resumes/<job>/<candidate>_<email>.pdf   (bulk-import source files)
+│   └── candidates-template.csv
+├── src/
+│   ├── app/
+│   │   ├── (auth)/                  (login, signup, forgot, reset)
+│   │   ├── (app)/                   (authenticated routes with sidebar shell)
+│   │   ├── api/{jobs,candidates}/{import,export,template}
+│   │   ├── auth/callback/           (Supabase code exchange)
+│   │   ├── globals.css              (design tokens — palette, radius, sidebar)
+│   │   └── layout.tsx
+│   ├── components/
+│   │   ├── ui/                      (shadcn-style primitives)
+│   │   ├── layout/                  (app-shell, app-sidebar, app-header)
+│   │   ├── jobs/                    (card, grid, wizard, edit form, tabs)
+│   │   ├── candidates/              (table, sidebar, drawers, detail sub-components)
+│   │   └── shared/bulk-actions.tsx  (import dialog with streaming progress)
+│   └── lib/
+│       ├── supabase/                (client, server, middleware, admin)
+│       ├── types/database.ts        (placeholder — regenerate via db:types)
+│       ├── csv.ts
+│       └── utils.ts
+└── supabase/
+    ├── config.toml
+    └── migrations/                  (12 SQL files in order)
+```
+
+Full architecture: [ARCHITECTURE.md](./ARCHITECTURE.md).
+
+---
+
+## Where to look when …
+
+- **"How do I add a new page?"** → Follow the pattern in `src/app/(app)/dashboard/page.tsx`. Server Component, `async`, fetches via `createClient()` from `@/lib/supabase/server`.
+- **"How do I mutate data from a form?"** → Server action file next to the page (e.g. `actions.ts`). Use `revalidatePath()` after writes. See `src/app/(app)/candidates/actions.ts` for examples.
+- **"How do I add a new table?"** → New migration file under `supabase/migrations/`. Include `enable row level security` + policies keyed off `current_tenant_id()`. Regenerate types with `npm run db:types`.
+- **"How do I bulk operate on candidates?"** → Extend `MoveToMenu` (single + bulk variants) or wire into the `CandidateTable` selection state.
+- **"How do I add a new nav item?"** → Edit the `NAV` array in `src/components/layout/app-sidebar.tsx` and create the route under `src/app/(app)/<slug>/page.tsx`.
+- **"How do I add a new field to Add Candidate?"** → `src/components/candidates/add-candidate-form.tsx` (form) + column in the `candidates` table (migration).
+
+---
 
 ## Troubleshooting
 
-- *"infinite recursion detected in policy"* — usually means a policy queries a table that gates back on itself. Use `security definer` helpers (we use `current_tenant_id()`, `is_admin()`).
-- *Signup works but app shows blank screen* — confirm the `handle_new_user` trigger fired by checking `select * from public.profiles` in Supabase SQL editor. Make sure the `auth → email` setting has `enable_signup = true`.
-- *RLS denies your own row* — the JWT may not yet have a profile. The signup trigger creates one synchronously, but if you created the auth user via the Supabase dashboard you must `insert into public.profiles` manually with the right `tenant_id`.
-- *Resume upload 403* — bucket policies require the path to start with `<your tenant_id>/`. The Add Candidate form already does this; double-check if you're uploading manually.
+**"infinite recursion detected in policy for relation jobs"** — you added a policy that references another RLS-protected table. Use one of the `SECURITY DEFINER` helpers instead (`is_on_job_team`, `job_in_my_tenant`, `interview_in_my_tenant`). See migration `20260623000010`.
+
+**Signup lands on a blank page** — the DB trigger didn't fire. Check `select * from public.profiles where id = auth.uid()` in the SQL editor.
+
+**Storage upload 403** — path must start with `<your tenant_id>/`. Every upload site already does this.
+
+**Import stuck / times out** — bulk import chunks client-side to 100 rows per request. If a single batch times out, drop `CHUNK_SIZE` in `src/components/shared/bulk-actions.tsx` to 50.
+
+**Invite emails don't arrive** — Supabase built-in SMTP is throttled (3/hour). Wire up Resend/Postmark in **Supabase Auth → Email Templates → SMTP Settings** for production.
+
+**Sidebar doesn't show on mobile** — expected; tap the hamburger in the top-left of the header.
