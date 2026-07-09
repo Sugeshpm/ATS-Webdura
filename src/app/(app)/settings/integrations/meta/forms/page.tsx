@@ -5,10 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BackToSettings } from "@/components/settings/back-link";
-import { updateMetaFormJob, toggleMetaFormActive, deleteMetaForm } from "../actions";
+import { toggleMetaFormActive, deleteMetaForm } from "../actions";
 import { RegisterFormDialog } from "./register-form-dialog";
 import { SyncNowButton } from "./sync-now-button";
 import { FieldMappingDialog } from "./field-mapping-dialog";
+import { JobAssignSelect } from "./job-assign-select";
 import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -103,20 +104,11 @@ export default async function MetaFormsPage({
                     <div className="text-[11px] font-mono text-muted-foreground">{f.page_id}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <form action={updateMetaFormJob} className="inline-flex">
-                      <input type="hidden" name="id" value={f.id} />
-                      <select
-                        name="job_id"
-                        defaultValue={f.job_id ?? ""}
-                        onChange={(e) => (e.currentTarget.form as HTMLFormElement).requestSubmit()}
-                        className="h-8 max-w-[200px] rounded-md border border-input bg-white px-2 text-xs"
-                      >
-                        <option value="">— No job (unassigned)</option>
-                        {(jobs ?? []).map((j: { id: string; title: string }) => (
-                          <option key={j.id} value={j.id}>{j.title}</option>
-                        ))}
-                      </select>
-                    </form>
+                    <JobAssignSelect
+                      formRowId={f.id}
+                      currentJobId={f.job_id}
+                      jobs={(jobs ?? []) as { id: string; title: string }[]}
+                    />
                   </td>
                   <td className="px-4 py-3">
                     {f.is_active ? <Badge variant="success">Active</Badge> : <Badge variant="muted">Paused</Badge>}

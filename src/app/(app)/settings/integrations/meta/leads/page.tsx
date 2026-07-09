@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { BackToSettings } from "@/components/settings/back-link";
 import { formatDate } from "@/lib/utils";
+import { LeadDetailsDialog } from "./lead-details-dialog";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export default async function MetaLeadsLogPage({
   let q = supabase
     .from("meta_leads_raw")
     .select(`
-      id, leadgen_id, form_id, page_id, received_at, meta_created_time, status, error,
+      id, leadgen_id, form_id, page_id, received_at, meta_created_time, status, error, raw_payload,
       candidate:candidates ( id, first_name, last_name, email )
     `)
     .order("received_at", { ascending: false })
@@ -91,6 +92,7 @@ export default async function MetaLeadsLogPage({
               <th className="px-4 py-3 text-left">Form</th>
               <th className="px-4 py-3 text-left">Leadgen ID</th>
               <th className="px-4 py-3 text-left">Error</th>
+              <th className="px-4 py-3 text-right">Details</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -111,10 +113,24 @@ export default async function MetaLeadsLogPage({
                 <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">{l.form_id}</td>
                 <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">{l.leadgen_id}</td>
                 <td className="px-4 py-2.5 text-xs text-rose-600">{l.error ?? ""}</td>
+                <td className="px-4 py-2.5 text-right">
+                  <LeadDetailsDialog
+                    lead={{
+                      leadgen_id: l.leadgen_id,
+                      form_id: l.form_id,
+                      page_id: l.page_id,
+                      received_at: l.received_at,
+                      meta_created_time: l.meta_created_time,
+                      status: l.status,
+                      error: l.error,
+                      raw_payload: l.raw_payload
+                    }}
+                  />
+                </td>
               </tr>
             ))}
             {(!leads || leads.length === 0) && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-muted-foreground">No leads in this view.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-muted-foreground">No leads in this view.</td></tr>
             )}
           </tbody>
         </table>
