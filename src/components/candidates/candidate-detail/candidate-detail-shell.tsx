@@ -3,17 +3,8 @@ import * as React from "react";
 import { User, FileText, Folder, Activity, StickyNote, MessageSquare, MessagesSquare } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CandidateHeader } from "@/components/candidates/candidate-detail/candidate-header";
-import { ResumePreviewButton } from "@/components/candidates/resume-preview";
 import type { CandidateInitial } from "@/components/candidates/edit-candidate-drawer";
 import type { CandidateCategory } from "@/app/(app)/candidates/actions";
-
-interface Resume {
-  id: string;
-  name: string;
-  mime: string | null;
-  storage_bucket: string;
-  storage_path: string;
-}
 
 interface HeaderData {
   applicationId: string;
@@ -43,7 +34,6 @@ interface HeaderData {
 interface Props {
   candidate: CandidateInitial & { category: CandidateCategory };
   email: string | null;
-  resume: Resume | null;
   header: HeaderData;
   summary: React.ReactNode;
   tabs: {
@@ -59,18 +49,13 @@ interface Props {
 
 type TabKey = "profile" | "resume" | "documents" | "activity" | "notes" | "feedback" | "communication";
 
-export function CandidateDetailShell({ candidate, email, resume, header, summary, tabs }: Props) {
+export function CandidateDetailShell({ candidate, email, header, summary, tabs }: Props) {
   const [tab, setTab] = React.useState<TabKey>("profile");
   const [focusNoteToken, setFocusNoteToken] = React.useState(0);
-  const previewRef = React.useRef<HTMLButtonElement>(null);
 
   function handleAddNote() {
     setTab("notes");
     setFocusNoteToken((t) => t + 1);
-  }
-
-  function handlePreviewResume() {
-    previewRef.current?.click();
   }
 
   return (
@@ -80,7 +65,6 @@ export function CandidateDetailShell({ candidate, email, resume, header, summary
         display={header.display}
         candidate={candidate}
         email={email}
-        resume={resume}
         job={header.job}
         stage={header.stage}
         owner={header.owner}
@@ -88,13 +72,7 @@ export function CandidateDetailShell({ candidate, email, resume, header, summary
         currentStageId={header.currentStageId}
         stages={header.stages}
         onAddNote={handleAddNote}
-        onPreviewResume={handlePreviewResume}
       />
-
-      {/* Hidden mount so the modal-based ResumePreview still works for the header button. */}
-      <div className="sr-only">
-        <ResumePreviewButton document={resume} />
-      </div>
 
       {summary}
 

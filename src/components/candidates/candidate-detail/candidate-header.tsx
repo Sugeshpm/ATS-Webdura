@@ -3,7 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import {
   ChevronLeft, ChevronRight, Mail, Phone, MapPin, Briefcase, Clock, Calendar,
-  Linkedin, Github, Globe, Eye, Download, CalendarPlus, StickyNote, Trash2, MoreHorizontal
+  Linkedin, Github, Globe, StickyNote, Trash2, MoreHorizontal
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -13,21 +13,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { createClient } from "@/lib/supabase/client";
 import { initials, formatDate } from "@/lib/utils";
 import { StageMoveMenu } from "@/components/candidates/stage-move-menu";
 import { MoveToMenu } from "@/components/candidates/move-to-menu";
 import { CategoryBadge } from "@/components/candidates/candidate-table";
 import { EditCandidateDrawer, type CandidateInitial } from "@/components/candidates/edit-candidate-drawer";
 import { deleteCandidateAndRedirect, type CandidateCategory } from "@/app/(app)/candidates/actions";
-
-interface Resume {
-  id: string;
-  name: string;
-  mime: string | null;
-  storage_bucket: string;
-  storage_path: string;
-}
 
 interface Display {
   first_name: string;
@@ -50,7 +41,6 @@ interface Props {
   display: Display;
   candidate: CandidateInitial & { category: CandidateCategory };
   email: string | null;
-  resume: Resume | null;
   job: { id: string; title: string } | null;
   stage: { id: string; name: string; color: string | null } | null;
   owner: { first_name: string | null; last_name: string | null } | null;
@@ -58,12 +48,11 @@ interface Props {
   currentStageId: string | null;
   stages: { id: string; name: string }[];
   onAddNote: () => void;
-  onPreviewResume: () => void;
 }
 
 export function CandidateHeader({
-  applicationId, display, candidate, email, resume, job, stage, owner,
-  appliedAt, currentStageId, stages, onAddNote, onPreviewResume
+  applicationId, display, candidate, email, job, stage, owner,
+  appliedAt, currentStageId, stages, onAddNote
 }: Props) {
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [pending, setPending] = React.useState(false);
@@ -71,16 +60,6 @@ export function CandidateHeader({
   const fullName = `${display.first_name} ${display.last_name ?? ""}`.trim();
   const expYears = display.experience_years ?? 0;
   const expMonths = display.experience_months ?? 0;
-
-  async function downloadResume() {
-    if (!resume) return;
-    const supabase = createClient();
-    const { data, error } = await supabase.storage
-      .from(resume.storage_bucket)
-      .createSignedUrl(resume.storage_path, 60, { download: resume.name });
-    if (error || !data) return toast.error(error?.message ?? "Could not generate download link.");
-    window.location.href = data.signedUrl;
-  }
 
   async function doDelete() {
     setPending(true);
@@ -144,18 +123,6 @@ export function CandidateHeader({
         {/* Actions (all in one place) */}
         <div className="flex flex-wrap items-center gap-2 lg:ml-auto lg:justify-end">
           <EditCandidateDrawer initial={candidate} />
-
-          <Button variant="outline" size="sm" onClick={onPreviewResume} disabled={!resume}>
-            <Eye className="mr-1 h-4 w-4" />{resume ? "Preview resume" : "No resume"}
-          </Button>
-
-          <Button variant="outline" size="sm" onClick={downloadResume} disabled={!resume}>
-            <Download className="mr-1 h-4 w-4" /> Download
-          </Button>
-
-          <Button variant="outline" size="sm" onClick={() => toast.info("Interview scheduling isn't enabled yet.")}>
-            <CalendarPlus className="mr-1 h-4 w-4" /> Schedule
-          </Button>
 
           <Button asChild variant="outline" size="sm" disabled={!email}>
             <a href={email ? `mailto:${email}` : undefined}>

@@ -159,7 +159,6 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
       <CandidateDetailShell
         candidate={candidateForEdit as never}
         email={candidate.email}
-        resume={resume as never}
         header={{
           applicationId,
           display: {
