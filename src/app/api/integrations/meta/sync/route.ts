@@ -57,9 +57,26 @@ export async function POST(req: Request) {
         const leads = await listFormLeads(token, body.form_id!, since);
         emit({ type: "start", total: leads.length });
 
-        let inserted = 0, duplicate = 0, failed = 0;
+        // Leads already successfully synced for THIS form (→ this job). Re-syncing
+        // must not touch them again — skip outright, don't re-insert.
+        const { data: doneRows } = await admin
+          .from("meta_leads_raw")
+          .select("leadgen_id")
+          .eq("tenant_id", tenantId)
+          .eq("form_id", body.form_id!)
+          .in("status", ["inserted", "duplicate"]);
+        const alreadySynced = new Set(
+          ((doneRows ?? []) as { leadgen_id: string }[]).map((r) => r.leadgen_id)
+        );
+
+        let inserted = 0, duplicate = 0, failed = 0, skipped = 0;
         for (let i = 0; i < leads.length; i++) {
           const l = leads[i];
+          if (alreadySynced.has(l.id)) {
+            skipped++;
+            emit({ type: "row", index: i, leadgen_id: l.id, status: "skipped" });
+            continue;
+          }
           try {
             await recordReceivedEvent(tenantId, l.id, l.form_id, (form as { page_id: string }).page_id, l.created_time);
             const r = await ingestMetaLead(l.id, l.form_id, (form as { page_id: string }).page_id, l.created_time);
@@ -79,7 +96,7 @@ export async function POST(req: Request) {
           .eq("form_id", body.form_id!)
           .eq("tenant_id", tenantId);
 
-        emit({ type: "done", total: leads.length, inserted, duplicate, failed });
+        emit({ type: "done", total: leads.length, inserted, duplicate, failed, skipped });
       } catch (e) {
         const msg = e instanceof MetaGraphError ? e.message : (e as Error).message;
         emit({ type: "error", error: msg });

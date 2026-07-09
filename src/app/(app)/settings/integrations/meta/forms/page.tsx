@@ -1,12 +1,11 @@
 import Link from "next/link";
-import { Trash2, Power, ScrollText, ListChecks } from "lucide-react";
+import { Trash2, Power, ScrollText, ListChecks, Facebook } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BackToSettings } from "@/components/settings/back-link";
 import { toggleMetaFormActive, deleteMetaForm } from "../actions";
-import { RegisterFormDialog } from "./register-form-dialog";
 import { SyncNowButton } from "./sync-now-button";
 import { FieldMappingDialog } from "./field-mapping-dialog";
 import { JobAssignSelect } from "./job-assign-select";
@@ -30,11 +29,6 @@ export default async function MetaFormsPage({
     supabase.from("jobs").select("id, title").eq("status", "active").order("title")
   ]);
 
-  const distinctPages = new Map<string, string | null>();
-  for (const f of (forms ?? []) as { page_id: string; page_name: string | null }[]) {
-    distinctPages.set(f.page_id, f.page_name);
-  }
-
   const [status, msg] = params.msg?.split(":") ?? [];
 
   return (
@@ -51,10 +45,11 @@ export default async function MetaFormsPage({
               <ScrollText className="mr-1 h-4 w-4" /> Leads log
             </Link>
           </Button>
-          <RegisterFormDialog
-            jobs={(jobs ?? []) as { id: string; title: string }[]}
-            knownPages={Array.from(distinctPages.entries()).map(([id, name]) => ({ id, name }))}
-          />
+          <Button asChild>
+            <a href="/api/integrations/meta/oauth/start">
+              <Facebook className="mr-1 h-4 w-4" /> Connect new form
+            </a>
+          </Button>
         </div>
       </div>
 
@@ -67,13 +62,17 @@ export default async function MetaFormsPage({
       {(!forms || forms.length === 0) ? (
         <Card className="mt-6">
           <CardHeader>
-            <CardTitle className="text-base">No forms registered yet</CardTitle>
+            <CardTitle className="text-base">No forms connected yet</CardTitle>
             <CardDescription>
-              Add a form to start receiving leads. You&apos;ll need a Page Access Token and the form ID from Meta&apos;s Ad Manager.
+              Click <strong>Connect new form</strong> to log in with Facebook, pick a Page, choose a Lead Gen form, and map its fields.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Link href="/settings/integrations/meta" className="text-sm text-primary hover:underline">← Back to Meta setup</Link>
+            <Button asChild>
+              <a href="/api/integrations/meta/oauth/start">
+                <Facebook className="mr-1 h-4 w-4" /> Connect new form
+              </a>
+            </Button>
           </CardContent>
         </Card>
       ) : (

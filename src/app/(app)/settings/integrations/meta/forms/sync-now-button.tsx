@@ -27,7 +27,7 @@ export function SyncNowButton({ formId }: { formId: string }) {
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let totals = { inserted: 0, duplicate: 0, failed: 0 };
+    let totals = { inserted: 0, duplicate: 0, failed: 0, skipped: 0 };
     let errMsg: string | null = null;
 
     while (true) {
@@ -41,7 +41,7 @@ export function SyncNowButton({ formId }: { formId: string }) {
         if (!line) continue;
         try {
           const evt = JSON.parse(line);
-          if (evt.type === "done") totals = { inserted: evt.inserted, duplicate: evt.duplicate, failed: evt.failed };
+          if (evt.type === "done") totals = { inserted: evt.inserted, duplicate: evt.duplicate, failed: evt.failed, skipped: evt.skipped ?? 0 };
           if (evt.type === "error") errMsg = String(evt.error);
         } catch { /* ignore */ }
       }
@@ -49,7 +49,7 @@ export function SyncNowButton({ formId }: { formId: string }) {
 
     setPending(false);
     if (errMsg) toast.error(`Sync error: ${errMsg}`);
-    else toast.success(`Synced · Inserted ${totals.inserted} · Duplicate ${totals.duplicate} · Failed ${totals.failed}`);
+    else toast.success(`Synced · Inserted ${totals.inserted} · Duplicate ${totals.duplicate} · Skipped ${totals.skipped} · Failed ${totals.failed}`);
     router.refresh();
   }
 

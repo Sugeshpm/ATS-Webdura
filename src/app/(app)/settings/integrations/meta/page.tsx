@@ -1,13 +1,11 @@
 import Link from "next/link";
-import { Info, ExternalLink, ArrowRight, Facebook } from "lucide-react";
+import { ArrowRight, Facebook } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { BackToSettings } from "@/components/settings/back-link";
-import { verifyMetaToken } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +32,6 @@ export default async function MetaIntegrationPage({
     ? "•".repeat(20) + " (set in env)"
     : "⚠ META_WEBHOOK_VERIFY_TOKEN not set";
   const appIdSet = !!process.env.META_APP_ID;
-  const appSecretSet = !!process.env.META_APP_SECRET;
-  const encKeySet = !!process.env.META_ENCRYPTION_KEY;
 
   const [status, msg] = params.msg?.split(":") ?? [];
 
@@ -83,41 +79,14 @@ export default async function MetaIntegrationPage({
         </CardContent>
       </Card>
 
-      {/* Setup checklist */}
-      <Card className="mt-4">
-        <CardHeader>
-          <CardTitle className="text-base inline-flex items-center gap-2"><Info className="h-4 w-4" /> Setup checklist</CardTitle>
-          <CardDescription>Complete these before pointing Meta at us.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ul className="space-y-2 text-sm">
-            <ChecklistRow ok={appIdSet}>
-              <code>META_APP_ID</code> set in environment
-            </ChecklistRow>
-            <ChecklistRow ok={appSecretSet}>
-              <code>META_APP_SECRET</code> set (used to verify webhook signatures)
-            </ChecklistRow>
-            <ChecklistRow ok={!!process.env.META_WEBHOOK_VERIFY_TOKEN}>
-              <code>META_WEBHOOK_VERIFY_TOKEN</code> set (Meta echoes this during handshake)
-            </ChecklistRow>
-            <ChecklistRow ok={encKeySet}>
-              <code>META_ENCRYPTION_KEY</code> set (32-byte hex — encrypts Page tokens at rest)
-            </ChecklistRow>
-            <ChecklistRow ok={true}>
-              Webhook subscribed at{" "}
-              <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                developers.facebook.com → Your App → Webhooks → Page → leadgen
-              </a>
-            </ChecklistRow>
-          </ul>
-        </CardContent>
-      </Card>
-
-      {/* Webhook config */}
+      {/* Webhook config — one-time setup, required for real-time lead delivery */}
       <Card className="mt-4">
         <CardHeader>
           <CardTitle className="text-base">Webhook endpoint</CardTitle>
-          <CardDescription>Paste these into Meta&apos;s Webhook configuration for your app.</CardDescription>
+          <CardDescription>
+            One-time setup for real-time delivery. Paste these into your Meta app&apos;s Webhooks config (Page → leadgen).
+            Without it, connected forms only ingest when you press &quot;Sync now&quot;.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <div>
@@ -135,37 +104,6 @@ export default async function MetaIntegrationPage({
             </div>
           </div>
         </CardContent>
-      </Card>
-
-      {/* Connect a page */}
-      <Card className="mt-4">
-        <form action={verifyMetaToken}>
-          <CardHeader>
-            <CardTitle className="text-base">Connect a Facebook Page — manual (advanced)</CardTitle>
-            <CardDescription>
-              Prefer the “Continue with Facebook” button above. As a fallback, paste a long-lived Page Access Token from the{" "}
-              <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-0.5">
-                Graph API Explorer <ExternalLink className="h-3 w-3" />
-              </a>. The token stays encrypted at rest.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="page_id">Page ID *</Label>
-              <Input id="page_id" name="page_id" required placeholder="123456789012345" />
-            </div>
-            <div className="space-y-1.5 md:col-span-2">
-              <Label htmlFor="token">Page Access Token *</Label>
-              <Input id="token" name="token" type="password" required placeholder="EAAG…" autoComplete="off" />
-              <p className="text-[11px] text-muted-foreground">
-                Must have <code>leads_retrieval</code> + <code>pages_show_list</code> + <code>pages_manage_ads</code> permissions.
-              </p>
-            </div>
-          </CardContent>
-          <CardFooter className="flex justify-end gap-2">
-            <Button type="submit">Verify &amp; continue</Button>
-          </CardFooter>
-        </form>
       </Card>
 
       {/* Connected pages */}
@@ -202,16 +140,5 @@ export default async function MetaIntegrationPage({
         </Link>
       </div>
     </div>
-  );
-}
-
-function ChecklistRow({ ok, children }: { ok: boolean; children: React.ReactNode }) {
-  return (
-    <li className="flex items-start gap-2">
-      <span className={"mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold " + (ok ? "bg-emerald-500 text-white" : "bg-amber-400 text-white")}>
-        {ok ? "✓" : "!"}
-      </span>
-      <span>{children}</span>
-    </li>
   );
 }

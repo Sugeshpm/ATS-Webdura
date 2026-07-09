@@ -67,11 +67,14 @@ export async function ingestMetaLead(
     .eq("leadgen_id", leadgenId)
     .maybeSingle();
 
-  if (existingRaw.data && (existingRaw.data as { status: string }).status !== "received") {
-    const row = existingRaw.data as { candidate_id: string | null; application_id: string | null; status: string };
+  // Already successfully synced? Never insert again — return the prior result.
+  // (A prior "failed" / "received" row falls through so a re-sync can retry it.)
+  const priorStatus = existingRaw.data ? (existingRaw.data as { status: string }).status : null;
+  if (priorStatus === "inserted" || priorStatus === "duplicate") {
+    const row = existingRaw.data as { candidate_id: string | null; application_id: string | null };
     return {
       leadgen_id: leadgenId,
-      status: row.status === "duplicate" ? "duplicate" : "inserted",
+      status: priorStatus === "duplicate" ? "duplicate" : "inserted",
       candidate_id: row.candidate_id ?? undefined,
       application_id: row.application_id ?? undefined
     };
@@ -179,6 +182,17 @@ export async function ingestMetaLead(
     }
   }
 
+  // 7b. Capture unmapped form questions (custom fields) as a note on the application.
+  //     Notes are application-scoped, so this only runs when the form maps to a job.
+  if (applicationId && Object.keys(mapped.customFields).length > 0) {
+    await admin.from("notes").insert({
+      tenant_id: form.tenant_id,
+      application_id: applicationId,
+      author_id: null,
+      body: buildMetaLeadNote(mapped.customFields, lead)
+    } as never);
+  }
+
   const finalStatus: IngestStatus = duplicateApp ? "duplicate" : "inserted";
 
   // 8. Upsert raw event with final links
@@ -199,6 +213,22 @@ export async function ingestMetaLead(
   } as never);
 
   return { leadgen_id: leadgenId, status: finalStatus, candidate_id: candidateId, application_id: applicationId ?? undefined };
+}
+
+/** Turn a Meta field key ("what_is_your_notice_period") into a readable question. */
+function prettifyQuestion(key: string): string {
+  const s = key.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : key;
+}
+
+/** Build a note body listing each unmapped question and its answer. */
+function buildMetaLeadNote(custom: Record<string, string>, lead: MetaLead): string {
+  const lines = Object.entries(custom).map(([q, a]) => `• ${prettifyQuestion(q)}: ${a}`);
+  const context: string[] = [];
+  if (lead.campaign_name) context.push(`Campaign: ${lead.campaign_name}`);
+  if (lead.ad_name) context.push(`Ad: ${lead.ad_name}`);
+  const header = "Additional answers from the Meta Lead form" + (context.length ? ` (${context.join(" · ")})` : "");
+  return `${header}\n${lines.join("\n")}`;
 }
 
 interface RawUpsert {

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toast";
 import { metaOAuthListForms, registerFormViaOAuth, endMetaOAuthSession } from "../actions";
+import { FieldMappingDialog } from "../forms/field-mapping-dialog";
 
 interface Page { id: string; name: string; category: string | null }
 interface Job { id: string; title: string }
@@ -59,7 +60,7 @@ export function ConnectWizard({
       return;
     }
     setRegistered((prev) => new Set(prev).add(form.id));
-    toast.success(`Synced "${form.name}". New submissions will flow in automatically.`);
+    toast.success(`Synced "${form.name}". Use “Map fields” to control which questions fill the profile.`);
     router.refresh();
   }
 
@@ -131,7 +132,7 @@ export function ConnectWizard({
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-white">2</span>
                 Choose a Lead Gen form
               </CardTitle>
-              <CardDescription>Forms on “{selectedPage.name}”. Assign a job so leads land as applications.</CardDescription>
+              <CardDescription>Forms on “{selectedPage.name}”. Assign a job, sync the form, then map its fields.</CardDescription>
             </div>
             <Button variant="ghost" size="sm" onClick={() => loadForms(selectedPage)} disabled={loadingForms} title="Refresh forms">
               <RefreshCw className={"h-3.5 w-3.5 " + (loadingForms ? "animate-spin" : "")} />
@@ -177,7 +178,10 @@ export function ConnectWizard({
                           ))}
                         </select>
                         {isRegistered ? (
-                          <Badge variant="success"><Check className="mr-1 h-3 w-3" /> Synced</Badge>
+                          <>
+                            <Badge variant="success"><Check className="mr-1 h-3 w-3" /> Synced</Badge>
+                            <FieldMappingDialog formId={f.id} formName={f.name} />
+                          </>
                         ) : (
                           <Button size="sm" onClick={() => register(f)} disabled={busy}>
                             {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
