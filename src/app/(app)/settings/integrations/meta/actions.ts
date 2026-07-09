@@ -3,8 +3,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/admin";
-import { encrypt } from "@/lib/crypto/encrypt";
-import { getPage, listForms, listPages, MetaGraphError } from "@/lib/meta/graph";
+import { encrypt, decrypt } from "@/lib/crypto/encrypt";
+import { getForm, getPage, listForms, listPages, MetaGraphError } from "@/lib/meta/graph";
 import { clearMetaOAuthSession, readMetaOAuthSession } from "@/lib/meta/oauth";
 
 async function requireAdmin() {
@@ -213,4 +213,96 @@ export async function registerFormViaOAuth(input: {
 /** End the connect session (drops the encrypted user-token cookie). */
 export async function endMetaOAuthSession() {
   await clearMetaOAuthSession();
+}
+
+// ---------------------------------------------------------------------------
+// Field mapping — map Meta form questions onto candidate profile fields
+// ---------------------------------------------------------------------------
+
+// Kept internal — "use server" modules may only export async functions.
+interface FormField {
+  name: string;      // Meta field key (matches field_data[].name)
+  label?: string;    // human label from the form question, if known
+  sample?: string;   // a recent value, to help the admin recognise the field
+}
+
+/**
+ * Build the field catalog + current mapping for a registered form.
+ * Fields come from the last few received leads (what actually arrives);
+ * if none yet, falls back to the form's questions via the Graph API.
+ */
+export async function getFieldMapping(formId: string) {
+  const ctx = await requireAdmin();
+  if (!ctx.ok) return { ok: false as const, error: ctx.error };
+
+  const admin = createServiceClient();
+  const { data: form } = await admin
+    .from("meta_lead_forms")
+    .select("form_id, field_mapping, page_access_token_encrypted")
+    .eq("tenant_id", ctx.tenant_id)
+    .eq("form_id", formId)
+    .maybeSingle();
+  if (!form) return { ok: false as const, error: "Form not registered." };
+  const row = form as { field_mapping: Record<string, string> | null; page_access_token_encrypted: string | null };
+
+  // 1. Field names seen in recent leads.
+  const { data: raws } = await admin
+    .from("meta_leads_raw")
+    .select("raw_payload")
+    .eq("tenant_id", ctx.tenant_id)
+    .eq("form_id", formId)
+    .order("received_at", { ascending: false })
+    .limit(25);
+
+  const byName = new Map<string, FormField>();
+  for (const r of (raws ?? []) as { raw_payload: { field_data?: { name?: string; values?: string[] }[] } | null }[]) {
+    const fd = r.raw_payload?.field_data;
+    if (!Array.isArray(fd)) continue;
+    for (const f of fd) {
+      if (!f?.name || byName.has(f.name)) continue;
+      const sample = (f.values ?? []).find((v) => v && v.trim())?.trim();
+      byName.set(f.name, { name: f.name, sample });
+    }
+  }
+
+  // 2. Fallback: pull questions from Meta if we've seen no leads yet.
+  if (byName.size === 0 && row.page_access_token_encrypted) {
+    try {
+      const token = decrypt(row.page_access_token_encrypted);
+      const meta = await getForm(token, formId);
+      for (const q of meta.questions ?? []) {
+        if (q.key && !byName.has(q.key)) byName.set(q.key, { name: q.key, label: q.label });
+      }
+    } catch {
+      // Non-fatal — admin can still map once leads arrive.
+    }
+  }
+
+  return {
+    ok: true as const,
+    fields: Array.from(byName.values()),
+    mapping: row.field_mapping ?? {}
+  };
+}
+
+/** Persist a form's field mapping ({ meta_field_name: candidate_target }). */
+export async function saveFieldMapping(formId: string, mapping: Record<string, string>) {
+  const ctx = await requireAdmin();
+  if (!ctx.ok) return { ok: false as const, error: ctx.error };
+
+  const clean: Record<string, string> = {};
+  for (const [k, v] of Object.entries(mapping)) {
+    if (k && typeof v === "string" && v) clean[k] = v;
+  }
+
+  const admin = createServiceClient();
+  const { error } = await admin
+    .from("meta_lead_forms")
+    .update({ field_mapping: clean } as never)
+    .eq("tenant_id", ctx.tenant_id)
+    .eq("form_id", formId);
+  if (error) return { ok: false as const, error: `Save failed: ${error.message}` };
+
+  revalidatePath("/settings/integrations/meta/forms");
+  return { ok: true as const };
 }

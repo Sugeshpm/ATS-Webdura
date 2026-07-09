@@ -32,12 +32,18 @@ export default async function MetaLeadsLogPage({
 
   const { data: leads } = await q;
 
+  const countQuery = (s?: string) => {
+    let cq = supabase.from("meta_leads_raw").select("id", { count: "exact", head: true });
+    if (s) cq = cq.eq("status", s);
+    if (params.form_id) cq = cq.eq("form_id", params.form_id);
+    return cq;
+  };
   const [{ count: all }, { count: inserted }, { count: duplicate }, { count: failed }, { count: received }] = await Promise.all([
-    supabase.from("meta_leads_raw").select("id", { count: "exact", head: true }),
-    supabase.from("meta_leads_raw").select("id", { count: "exact", head: true }).eq("status", "inserted"),
-    supabase.from("meta_leads_raw").select("id", { count: "exact", head: true }).eq("status", "duplicate"),
-    supabase.from("meta_leads_raw").select("id", { count: "exact", head: true }).eq("status", "failed"),
-    supabase.from("meta_leads_raw").select("id", { count: "exact", head: true }).eq("status", "received")
+    countQuery(),
+    countQuery("inserted"),
+    countQuery("duplicate"),
+    countQuery("failed"),
+    countQuery("received")
   ]);
   const counts: Record<StatusFilter, number> = {
     all: all ?? 0, inserted: inserted ?? 0, duplicate: duplicate ?? 0, failed: failed ?? 0, received: received ?? 0
@@ -49,16 +55,30 @@ export default async function MetaLeadsLogPage({
       <h1 className="text-xl font-semibold">Meta leads log</h1>
       <p className="mt-1 text-sm text-muted-foreground">Every lead ever received from Meta, mapped to its candidate row (if ingest succeeded).</p>
 
+      {params.form_id && (
+        <div className="mt-3 inline-flex items-center gap-2 rounded-md border border-border bg-secondary/40 px-3 py-1.5 text-xs">
+          <span className="text-muted-foreground">Filtered to form</span>
+          <span className="font-mono">{params.form_id}</span>
+          <Link href="/settings/integrations/meta/leads" className="text-primary hover:underline">Clear</Link>
+        </div>
+      )}
+
       <div className="mt-5 flex flex-wrap gap-2">
-        {STATUS_FILTERS.map((s) => (
-          <Link
-            key={s}
-            href={s === "all" ? "/settings/integrations/meta/leads" : `/settings/integrations/meta/leads?status=${s}`}
-            className={`rounded-full border px-3 py-1 text-xs ${status === s ? "border-primary text-primary" : "border-border text-muted-foreground hover:border-foreground/30"}`}
-          >
-            {s} <span className="ml-1 opacity-60">{counts[s]}</span>
-          </Link>
-        ))}
+        {STATUS_FILTERS.map((s) => {
+          const qp = new URLSearchParams();
+          if (s !== "all") qp.set("status", s);
+          if (params.form_id) qp.set("form_id", params.form_id);
+          const href = qp.toString() ? `/settings/integrations/meta/leads?${qp.toString()}` : "/settings/integrations/meta/leads";
+          return (
+            <Link
+              key={s}
+              href={href}
+              className={`rounded-full border px-3 py-1 text-xs ${status === s ? "border-primary text-primary" : "border-border text-muted-foreground hover:border-foreground/30"}`}
+            >
+              {s} <span className="ml-1 opacity-60">{counts[s]}</span>
+            </Link>
+          );
+        })}
       </div>
 
       <div className="mt-6 overflow-x-auto rounded-xl border border-border bg-card shadow-card">
@@ -82,10 +102,10 @@ export default async function MetaLeadsLogPage({
                 <td className="px-4 py-2.5"><StatusBadge status={l.status} /></td>
                 <td className="px-4 py-2.5">
                   {l.candidate ? (
-                    <div>
-                      <div className="text-sm font-medium">{l.candidate.first_name} {l.candidate.last_name ?? ""}</div>
+                    <Link href={`/candidates/${l.candidate.id}`} className="group block">
+                      <div className="text-sm font-medium text-primary group-hover:underline">{l.candidate.first_name} {l.candidate.last_name ?? ""}</div>
                       {l.candidate.email && <div className="text-[11px] text-muted-foreground">{l.candidate.email}</div>}
-                    </div>
+                    </Link>
                   ) : <span className="text-muted-foreground">—</span>}
                 </td>
                 <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">{l.form_id}</td>

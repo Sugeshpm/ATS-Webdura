@@ -25,6 +25,31 @@ export const DEFAULT_META_FIELD_MAPPING: Record<string, string> = {
   linkedin_profile: "linkedin_url"
 };
 
+/**
+ * Candidate profile fields a Meta form question can be mapped to.
+ * The `key` is the target consumed by `mapMetaLeadToCandidate`; the `label`
+ * is what the admin sees in the mapping editor. `city`/`state`/`country`
+ * are concatenated into `current_location`. `full_name` is auto-split.
+ * Value `"ignore"` (see below) drops the field entirely.
+ */
+export const CANDIDATE_TARGET_FIELDS: { key: string; label: string }[] = [
+  { key: "first_name",      label: "First name" },
+  { key: "last_name",       label: "Last name" },
+  { key: "full_name",       label: "Full name (auto-split into first/last)" },
+  { key: "email",           label: "Email" },
+  { key: "phone",           label: "Phone" },
+  { key: "current_company", label: "Current company" },
+  { key: "linkedin_url",    label: "LinkedIn URL" },
+  { key: "gender",          label: "Gender" },
+  { key: "date_of_birth",   label: "Date of birth" },
+  { key: "city",            label: "City → location" },
+  { key: "state",           label: "State → location" },
+  { key: "country",         label: "Country → location" }
+];
+
+/** Mapping value that explicitly drops a field (overrides a built-in default). */
+export const IGNORE_TARGET = "ignore";
+
 export interface MappedCandidate {
   first_name: string;
   middle_name: string | null;
@@ -75,9 +100,11 @@ export function mapMetaLeadToCandidate(
     return firstValue(f);
   };
 
-  // Resolve mapped fields
+  // Resolve mapped fields. A candKey of "" or "ignore" drops the field —
+  // this lets a saved mapping override a built-in default.
   const candidateFields: Record<string, string | undefined> = {};
   for (const [metaKey, candKey] of Object.entries(mapping)) {
+    if (!candKey || candKey === IGNORE_TARGET) continue;
     const v = grab(metaKey);
     if (v !== undefined) candidateFields[candKey] = v;
   }

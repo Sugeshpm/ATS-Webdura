@@ -95,6 +95,11 @@ export async function listForms(token: string, pageId: string): Promise<MetaLead
   return res.data ?? [];
 }
 
+/** Fetch a single Lead Ad form, including its questions (for the field-mapping editor). */
+export async function getForm(token: string, formId: string): Promise<MetaLeadForm> {
+  return graph<MetaLeadForm>(`/${formId}`, token, { fields: "id,name,status,questions" });
+}
+
 /** Fetch a single lead by leadgen_id. */
 export async function getLead(token: string, leadgenId: string): Promise<MetaLead> {
   return graph<MetaLead>(`/${leadgenId}`, token, {

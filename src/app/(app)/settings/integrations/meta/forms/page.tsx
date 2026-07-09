@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { RefreshCw, Trash2, Power } from "lucide-react";
+import { Trash2, Power, ScrollText, ListChecks } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { BackToSettings } from "@/components/settings/back-link";
 import { updateMetaFormJob, toggleMetaFormActive, deleteMetaForm } from "../actions";
 import { RegisterFormDialog } from "./register-form-dialog";
 import { SyncNowButton } from "./sync-now-button";
+import { FieldMappingDialog } from "./field-mapping-dialog";
 import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -43,10 +44,17 @@ export default async function MetaFormsPage({
           <h1 className="text-xl font-semibold">Meta Lead Ad forms</h1>
           <p className="mt-1 text-sm text-muted-foreground">Registered forms sync new submissions into your candidate pipeline in real time.</p>
         </div>
-        <RegisterFormDialog
-          jobs={(jobs ?? []) as { id: string; title: string }[]}
-          knownPages={Array.from(distinctPages.entries()).map(([id, name]) => ({ id, name }))}
-        />
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline">
+            <Link href="/settings/integrations/meta/leads">
+              <ScrollText className="mr-1 h-4 w-4" /> Leads log
+            </Link>
+          </Button>
+          <RegisterFormDialog
+            jobs={(jobs ?? []) as { id: string; title: string }[]}
+            knownPages={Array.from(distinctPages.entries()).map(([id, name]) => ({ id, name }))}
+          />
+        </div>
       </div>
 
       {msg && (
@@ -118,6 +126,12 @@ export default async function MetaFormsPage({
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap justify-end gap-1">
+                      <FieldMappingDialog formId={f.form_id} formName={f.form_name ?? f.form_id} />
+                      <Button asChild variant="ghost" size="sm" className="text-xs" title="View leads from this form">
+                        <Link href={`/settings/integrations/meta/leads?form_id=${f.form_id}`}>
+                          <ListChecks className="h-3.5 w-3.5" />
+                        </Link>
+                      </Button>
                       <SyncNowButton formId={f.form_id} />
                       <form action={toggleMetaFormActive} className="inline">
                         <input type="hidden" name="id" value={f.id} />
