@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/admin";
 import { encrypt } from "@/lib/crypto/encrypt";
-import { getPage, listForms, MetaGraphError } from "@/lib/meta/graph";
+import { getPage, listForms, listPages, MetaGraphError } from "@/lib/meta/graph";
+import { clearMetaOAuthSession, readMetaOAuthSession } from "@/lib/meta/oauth";
 
 async function requireAdmin() {
   const supabase = await createClient();
@@ -124,4 +125,92 @@ export async function fetchMetaForms(pageId: string, token: string) {
   } catch (e) {
     return { ok: false as const, error: e instanceof MetaGraphError ? e.message : (e as Error).message };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Facebook Login (OAuth) connect flow
+// ---------------------------------------------------------------------------
+
+/** Resolve the current OAuth user token to the caller's chosen Page + its token. */
+async function pageFromSession(pageId: string) {
+  const session = await readMetaOAuthSession();
+  if (!session) return { ok: false as const, error: "Facebook session expired — please reconnect." };
+  const pages = await listPages(session.token);
+  const page = pages.find((p) => p.id === pageId);
+  if (!page) return { ok: false as const, error: "Page not found or you no longer manage it." };
+  return { ok: true as const, page };
+}
+
+/**
+ * List Lead Ad forms for a Page the admin selected in the connect wizard.
+ * Uses the encrypted OAuth session cookie — no token crosses the wire.
+ */
+export async function metaOAuthListForms(pageId: string) {
+  const ctx = await requireAdmin();
+  if (!ctx.ok) return { ok: false as const, error: ctx.error };
+
+  try {
+    const resolved = await pageFromSession(pageId);
+    if (!resolved.ok) return resolved;
+    const forms = await listForms(resolved.page.access_token, pageId);
+    return {
+      ok: true as const,
+      page_name: resolved.page.name,
+      forms: forms.map((f) => ({ id: f.id, name: f.name, status: f.status ?? null }))
+    };
+  } catch (e) {
+    return { ok: false as const, error: e instanceof MetaGraphError ? e.message : (e as Error).message };
+  }
+}
+
+/**
+ * Register a form picked in the connect wizard. Pulls the Page access token from
+ * the OAuth session (via `/me/accounts`), encrypts it, and upserts the form row.
+ */
+export async function registerFormViaOAuth(input: {
+  page_id: string;
+  page_name?: string | null;
+  form_id: string;
+  form_name?: string | null;
+  job_id?: string | null;
+}) {
+  const ctx = await requireAdmin();
+  if (!ctx.ok) return { ok: false as const, error: ctx.error };
+
+  if (!input.page_id || !input.form_id) {
+    return { ok: false as const, error: "Missing page or form." };
+  }
+
+  try {
+    const resolved = await pageFromSession(input.page_id);
+    if (!resolved.ok) return resolved;
+
+    const admin = createServiceClient();
+    const { error } = await admin.from("meta_lead_forms").upsert(
+      {
+        tenant_id: ctx.tenant_id,
+        page_id: input.page_id,
+        page_name: input.page_name || resolved.page.name || null,
+        form_id: input.form_id,
+        form_name: input.form_name || null,
+        job_id: input.job_id || null,
+        field_mapping: {},
+        is_active: true,
+        page_access_token_encrypted: encrypt(resolved.page.access_token)
+      } as never,
+      { onConflict: "tenant_id,form_id" }
+    );
+    if (error) return { ok: false as const, error: `Save failed: ${error.message}` };
+
+    revalidatePath("/settings/integrations/meta/forms");
+    revalidatePath("/settings/integrations/meta");
+    return { ok: true as const };
+  } catch (e) {
+    return { ok: false as const, error: e instanceof MetaGraphError ? e.message : (e as Error).message };
+  }
+}
+
+/** End the connect session (drops the encrypted user-token cookie). */
+export async function endMetaOAuthSession() {
+  await clearMetaOAuthSession();
 }

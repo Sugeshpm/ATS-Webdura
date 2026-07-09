@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Info, ExternalLink, ArrowRight } from "lucide-react";
+import { Info, ExternalLink, ArrowRight, Facebook } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -53,8 +53,38 @@ export default async function MetaIntegrationPage({
         }`}>{decodeURIComponent(msg)}</div>
       )}
 
-      {/* Setup checklist */}
+      {/* Primary: Facebook Login connect flow */}
       <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="text-base inline-flex items-center gap-2">
+            <Facebook className="h-4 w-4 text-[#1877F2]" /> Connect with Facebook
+          </CardTitle>
+          <CardDescription>
+            Log in with Facebook, then pick your Page and the Lead Gen form to sync. We fetch Pages and forms
+            automatically — no IDs or tokens to copy by hand.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {appIdSet ? (
+            <Button asChild>
+              <a href="/api/integrations/meta/oauth/start">
+                <Facebook className="mr-1 h-4 w-4" /> Continue with Facebook
+              </a>
+            </Button>
+          ) : (
+            <p className="text-sm text-amber-700">
+              Set <code>META_APP_ID</code> and <code>META_APP_SECRET</code> in the environment to enable Facebook login.
+            </p>
+          )}
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Redirect URI to whitelist in your Meta app (Facebook Login → Settings → Valid OAuth Redirect URIs):{" "}
+            <code className="break-all">{`${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/api/integrations/meta/oauth/callback`}</code>
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Setup checklist */}
+      <Card className="mt-4">
         <CardHeader>
           <CardTitle className="text-base inline-flex items-center gap-2"><Info className="h-4 w-4" /> Setup checklist</CardTitle>
           <CardDescription>Complete these before pointing Meta at us.</CardDescription>
@@ -111,9 +141,9 @@ export default async function MetaIntegrationPage({
       <Card className="mt-4">
         <form action={verifyMetaToken}>
           <CardHeader>
-            <CardTitle className="text-base">Connect a Facebook Page</CardTitle>
+            <CardTitle className="text-base">Connect a Facebook Page — manual (advanced)</CardTitle>
             <CardDescription>
-              Paste a long-lived Page Access Token from the{" "}
+              Prefer the “Continue with Facebook” button above. As a fallback, paste a long-lived Page Access Token from the{" "}
               <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-0.5">
                 Graph API Explorer <ExternalLink className="h-3 w-3" />
               </a>. The token stays encrypted at rest.

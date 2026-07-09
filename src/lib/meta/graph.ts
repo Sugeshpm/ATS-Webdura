@@ -29,6 +29,11 @@ export interface MetaPage {
   category?: string;
 }
 
+/** A Page as returned by `/me/accounts` — carries its own long-lived Page access token. */
+export interface MetaPageWithToken extends MetaPage {
+  access_token: string;
+}
+
 export interface MetaLeadForm {
   id: string;
   name: string;
@@ -66,6 +71,19 @@ export class MetaGraphError extends Error {
 /** Fetch the Page that owns this access token. Simplest way to verify the token works. */
 export async function getPage(token: string, pageId: string): Promise<MetaPage> {
   return graph<MetaPage>(`/${pageId}`, token, { fields: "id,name,category" });
+}
+
+/**
+ * List the Pages the logged-in user manages, each with its own Page access token.
+ * Called right after OAuth with the user access token. When the user token is
+ * long-lived, the returned Page tokens are long-lived too (effectively no expiry).
+ */
+export async function listPages(userToken: string): Promise<MetaPageWithToken[]> {
+  const res = await graph<{ data: MetaPageWithToken[] }>(`/me/accounts`, userToken, {
+    fields: "id,name,category,access_token",
+    limit: "100"
+  });
+  return res.data ?? [];
 }
 
 /** List all Lead Ad forms owned by a Page. */
@@ -122,6 +140,31 @@ async function graphAbsolute<T>(fullUrl: string): Promise<T> {
     throw new MetaGraphError(body?.error?.message ?? `${res.status} ${res.statusText}`, body?.error?.code, res.status);
   }
   return body as T;
+}
+
+/**
+ * Exchange an OAuth `code` (from the Facebook Login redirect) for a short-lived user token.
+ * `redirectUri` must EXACTLY match the one used to build the login dialog URL.
+ */
+export async function exchangeCodeForToken(
+  code: string,
+  redirectUri: string
+): Promise<{ access_token: string; expires_in?: number }> {
+  const url = new URL(`${BASE}/oauth/access_token`);
+  url.searchParams.set("client_id", process.env.META_APP_ID ?? "");
+  url.searchParams.set("client_secret", process.env.META_APP_SECRET ?? "");
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("code", code);
+  const res = await fetch(url.toString(), { cache: "no-store" });
+  const body = (await res.json().catch(() => ({}))) as {
+    access_token?: string;
+    expires_in?: number;
+    error?: { message?: string; code?: number };
+  };
+  if (!res.ok || !body.access_token) {
+    throw new MetaGraphError(body?.error?.message ?? `Code exchange failed: ${res.status}`, body?.error?.code, res.status);
+  }
+  return { access_token: body.access_token, expires_in: body.expires_in };
 }
 
 /** Exchange a short-lived user token for a ~60-day long-lived one. Optional — used if we build OAuth. */
