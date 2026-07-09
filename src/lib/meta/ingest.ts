@@ -124,9 +124,14 @@ export async function ingestMetaLead(
 
   // 6. Insert candidate if new
   if (!candidateId) {
-    const { data: inserted, error: insErr } = await admin.from("candidates").insert({
+    // Only include fields that actually have a value so we don't null-out column defaults.
+    const candidateInsert: Record<string, unknown> = {
       tenant_id: form.tenant_id,
       first_name: mapped.first_name,
+      source: "meta_lead_ads",
+      external_source: "meta_lead_ads",
+      external_id: leadgenId,
+      category: "active",
       middle_name: mapped.middle_name,
       last_name: mapped.last_name,
       email: mapped.email,
@@ -135,12 +140,23 @@ export async function ingestMetaLead(
       date_of_birth: mapped.date_of_birth,
       current_company: mapped.current_company,
       current_location: mapped.current_location,
+      preferred_location: mapped.preferred_location,
+      experience_years: mapped.experience_years,
+      experience_months: mapped.experience_months,
+      notice_period_days: mapped.notice_period_days,
+      current_salary: mapped.current_salary,
+      expected_salary: mapped.expected_salary,
       linkedin_url: mapped.linkedin_url,
-      source: "meta_lead_ads",
-      external_source: "meta_lead_ads",
-      external_id: leadgenId,
-      category: "active"
-    } as never).select("id").single();
+      github_url: mapped.github_url,
+      portfolio_url: mapped.portfolio_url
+    };
+    for (const k of Object.keys(candidateInsert)) {
+      const v = candidateInsert[k];
+      if (v === null || v === undefined || v === "") delete candidateInsert[k];
+    }
+
+    const { data: inserted, error: insErr } = await admin
+      .from("candidates").insert(candidateInsert as never).select("id").single();
     if (insErr || !inserted) {
       const err = insErr?.message ?? "candidate insert failed";
       await upsertRawEvent(admin, {
