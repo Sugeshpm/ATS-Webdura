@@ -2,9 +2,10 @@
 import * as React from "react";
 import { User, FileText, Folder, Activity, StickyNote, MessageSquare, MessagesSquare } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CandidateActionBar } from "@/components/candidates/candidate-detail/candidate-action-bar";
+import { CandidateHeader } from "@/components/candidates/candidate-detail/candidate-header";
 import { ResumePreviewButton } from "@/components/candidates/resume-preview";
 import type { CandidateInitial } from "@/components/candidates/edit-candidate-drawer";
+import type { CandidateCategory } from "@/app/(app)/candidates/actions";
 
 interface Resume {
   id: string;
@@ -14,10 +15,37 @@ interface Resume {
   storage_path: string;
 }
 
+interface HeaderData {
+  applicationId: string;
+  display: {
+    first_name: string;
+    last_name: string | null;
+    current_company: string | null;
+    current_location: string | null;
+    email: string | null;
+    phone: string | null;
+    experience_years: number | null;
+    experience_months: number | null;
+    source: string | null;
+    linkedin_url: string | null;
+    github_url: string | null;
+    portfolio_url: string | null;
+    updated_at: string;
+  };
+  job: { id: string; title: string } | null;
+  stage: { id: string; name: string; color: string | null } | null;
+  owner: { first_name: string | null; last_name: string | null } | null;
+  appliedAt: string;
+  currentStageId: string | null;
+  stages: { id: string; name: string }[];
+}
+
 interface Props {
-  candidate: CandidateInitial & { category: "active" | "talent_pool" | "archived" | "duplicate" };
+  candidate: CandidateInitial & { category: CandidateCategory };
   email: string | null;
   resume: Resume | null;
+  header: HeaderData;
+  summary: React.ReactNode;
   tabs: {
     profile: React.ReactNode;
     resume: React.ReactNode;
@@ -31,7 +59,7 @@ interface Props {
 
 type TabKey = "profile" | "resume" | "documents" | "activity" | "notes" | "feedback" | "communication";
 
-export function CandidateDetailShell({ candidate, email, resume, tabs }: Props) {
+export function CandidateDetailShell({ candidate, email, resume, header, summary, tabs }: Props) {
   const [tab, setTab] = React.useState<TabKey>("profile");
   const [focusNoteToken, setFocusNoteToken] = React.useState(0);
   const previewRef = React.useRef<HTMLButtonElement>(null);
@@ -42,24 +70,33 @@ export function CandidateDetailShell({ candidate, email, resume, tabs }: Props) 
   }
 
   function handlePreviewResume() {
-    // Reuse the modal preview; clicking the action bar's button simulates a click on the hidden preview button below.
     previewRef.current?.click();
   }
 
   return (
-    <>
-      <CandidateActionBar
+    <div className="space-y-4">
+      <CandidateHeader
+        applicationId={header.applicationId}
+        display={header.display}
         candidate={candidate}
         email={email}
         resume={resume}
+        job={header.job}
+        stage={header.stage}
+        owner={header.owner}
+        appliedAt={header.appliedAt}
+        currentStageId={header.currentStageId}
+        stages={header.stages}
         onAddNote={handleAddNote}
         onPreviewResume={handlePreviewResume}
       />
 
-      {/* Hidden mount so the modal-based ResumePreview still works for the action bar. */}
+      {/* Hidden mount so the modal-based ResumePreview still works for the header button. */}
       <div className="sr-only">
         <ResumePreviewButton document={resume} />
       </div>
+
+      {summary}
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
         <TabsList className="flex w-full flex-wrap gap-2 overflow-x-auto sm:gap-4">
@@ -77,7 +114,6 @@ export function CandidateDetailShell({ candidate, email, resume, tabs }: Props) 
         <TabsContent value="documents">{tabs.documents}</TabsContent>
         <TabsContent value="activity">{tabs.activity}</TabsContent>
         <TabsContent value="notes">
-          {/* Re-render with focus token so the composer focuses each time the action bar is clicked */}
           {React.isValidElement(tabs.notes)
             ? React.cloneElement(tabs.notes as React.ReactElement<{ autoFocus?: boolean; focusToken?: number }>, { autoFocus: focusNoteToken > 0, focusToken: focusNoteToken })
             : tabs.notes}
@@ -85,7 +121,7 @@ export function CandidateDetailShell({ candidate, email, resume, tabs }: Props) 
         <TabsContent value="feedback">{tabs.feedback}</TabsContent>
         <TabsContent value="communication">{tabs.communication}</TabsContent>
       </Tabs>
-    </>
+    </div>
   );
 }
 

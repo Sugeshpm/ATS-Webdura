@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Folder, MessageSquare, MessagesSquare } from "lucide-react";
 import { formatDate } from "@/lib/utils";
-import { CandidateHeader } from "@/components/candidates/candidate-detail/candidate-header";
 import { SummaryCards } from "@/components/candidates/candidate-detail/summary-cards";
 import { ProfileTab } from "@/components/candidates/candidate-detail/profile-tab";
 import { ResumePanel } from "@/components/candidates/candidate-detail/resume-panel";
@@ -145,31 +144,47 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
     category: (candidate.category ?? "active") as "active" | "talent_pool" | "archived" | "duplicate"
   };
 
+  const summary = (
+    <SummaryCards
+      stage={stage}
+      appliedJobsCount={appliedJobsCount}
+      interviewsCount={interviewsCount}
+      notesCount={notesCount}
+      lastActivityAt={lastActivityAt}
+    />
+  );
+
   return (
     <div className="container max-w-7xl space-y-4 py-5 sm:py-6">
-      <CandidateHeader
-        applicationId={applicationId}
-        candidate={candidate}
-        job={job}
-        stage={stage}
-        owner={owner?.data ?? null}
-        appliedAt={app.applied_at}
-        currentStageId={app.current_stage_id}
-        stages={(stages ?? []) as never}
-      />
-
-      <SummaryCards
-        stage={stage}
-        appliedJobsCount={appliedJobsCount}
-        interviewsCount={interviewsCount}
-        notesCount={notesCount}
-        lastActivityAt={lastActivityAt}
-      />
-
       <CandidateDetailShell
         candidate={candidateForEdit as never}
         email={candidate.email}
         resume={resume as never}
+        header={{
+          applicationId,
+          display: {
+            first_name: candidate.first_name,
+            last_name: candidate.last_name,
+            current_company: candidate.current_company,
+            current_location: candidate.current_location,
+            email: candidate.email,
+            phone: candidate.phone,
+            experience_years: candidate.experience_years,
+            experience_months: candidate.experience_months,
+            source: candidate.source,
+            linkedin_url: candidate.linkedin_url,
+            github_url: candidate.github_url,
+            portfolio_url: candidate.portfolio_url,
+            updated_at: candidate.updated_at
+          },
+          job,
+          stage,
+          owner: owner?.data ?? null,
+          appliedAt: app.applied_at,
+          currentStageId: app.current_stage_id,
+          stages: (stages ?? []) as never
+        }}
+        summary={summary}
         tabs={{
           profile: (
             <ProfileTab
