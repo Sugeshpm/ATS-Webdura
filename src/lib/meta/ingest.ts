@@ -67,16 +67,19 @@ export async function ingestMetaLead(
     .eq("leadgen_id", leadgenId)
     .maybeSingle();
 
-  // Already successfully synced? Never insert again — return the prior result.
-  // (A prior "failed" / "received" row falls through so a re-sync can retry it.)
-  const priorStatus = existingRaw.data ? (existingRaw.data as { status: string }).status : null;
-  if (priorStatus === "inserted" || priorStatus === "duplicate") {
-    const row = existingRaw.data as { candidate_id: string | null; application_id: string | null };
+  // Already synced AND the candidate still exists? Never insert again — return the
+  // prior result. If the candidate was deleted (FK set candidate_id → null), or the
+  // prior status was "failed"/"received", fall through so the re-sync recreates it.
+  const priorRow = existingRaw.data
+    ? (existingRaw.data as { candidate_id: string | null; application_id: string | null; status: string })
+    : null;
+  const priorStatus = priorRow?.status ?? null;
+  if ((priorStatus === "inserted" || priorStatus === "duplicate") && priorRow?.candidate_id) {
     return {
       leadgen_id: leadgenId,
       status: priorStatus === "duplicate" ? "duplicate" : "inserted",
-      candidate_id: row.candidate_id ?? undefined,
-      application_id: row.application_id ?? undefined
+      candidate_id: priorRow.candidate_id ?? undefined,
+      application_id: priorRow.application_id ?? undefined
     };
   }
 

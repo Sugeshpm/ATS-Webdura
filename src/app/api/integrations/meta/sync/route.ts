@@ -57,14 +57,16 @@ export async function POST(req: Request) {
         const leads = await listFormLeads(token, body.form_id!, since);
         emit({ type: "start", total: leads.length });
 
-        // Leads already successfully synced for THIS form (→ this job). Re-syncing
-        // must not touch them again — skip outright, don't re-insert.
+        // Leads already synced for THIS form (→ this job) whose candidate STILL exists.
+        // Re-syncing must not duplicate them. If the candidate was deleted, the FK set
+        // candidate_id → null, so it drops out of this set and the lead is re-created.
         const { data: doneRows } = await admin
           .from("meta_leads_raw")
           .select("leadgen_id")
           .eq("tenant_id", tenantId)
           .eq("form_id", body.form_id!)
-          .in("status", ["inserted", "duplicate"]);
+          .in("status", ["inserted", "duplicate"])
+          .not("candidate_id", "is", null);
         const alreadySynced = new Set(
           ((doneRows ?? []) as { leadgen_id: string }[]).map((r) => r.leadgen_id)
         );
