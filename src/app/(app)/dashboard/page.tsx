@@ -66,21 +66,28 @@ export default async function DashboardPage() {
     supabase.from("stages").select("id, name, code, order, color").eq("is_archived", false).order("order")
   ]);
 
-  // Build per-stage candidate counts across all jobs by querying applications.
+  // Per-stage counts across all jobs. Use COUNT queries (head:true) rather than
+  // fetching rows and tallying in JS — a row fetch is capped at Supabase's 1000-row
+  // response limit, which silently truncates and skews the distribution (everything
+  // lands under one stage) once there are >1000 applications.
   let pipelineRows: FunnelRow[] = [];
   if (pipelineStages?.length) {
-    const stageIds = (pipelineStages as { id: string }[]).map((s) => s.id);
-    const { data: appCounts } = await supabase
-      .from("applications")
-      .select("current_stage_id")
-      .in("current_stage_id", stageIds)
-      .eq("is_archived", false);
-    const byStage = new Map<string, number>();
-    for (const a of (appCounts ?? []) as { current_stage_id: string }[]) {
-      byStage.set(a.current_stage_id, (byStage.get(a.current_stage_id) ?? 0) + 1);
-    }
-    pipelineRows = (pipelineStages as never as { id: string; name: string; order: number }[])
-      .map((s) => ({ stage_id: s.id, stage_name: s.name, stage_order: s.order, count: byStage.get(s.id) ?? 0 }));
+    const stages = pipelineStages as { id: string; name: string; order: number }[];
+    const counts = await Promise.all(
+      stages.map((s) =>
+        supabase
+          .from("applications")
+          .select("id", { count: "exact", head: true })
+          .eq("current_stage_id", s.id)
+          .eq("is_archived", false)
+      )
+    );
+    pipelineRows = stages.map((s, i) => ({
+      stage_id: s.id,
+      stage_name: s.name,
+      stage_order: s.order,
+      count: counts[i].count ?? 0
+    }));
   }
   const pipelineTotal = pipelineRows.reduce((sum, s) => sum + s.count, 0);
 

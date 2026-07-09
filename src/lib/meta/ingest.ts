@@ -127,6 +127,14 @@ export async function ingestMetaLead(
 
   // 6. Insert candidate if new
   if (!candidateId) {
+    // Owner = the creator of the linked job, so Meta leads surface under "My candidates"
+    // (the app's owner-scoped view), not just "All candidates".
+    let ownerId: string | null = null;
+    if (form.job_id) {
+      const { data: job } = await admin.from("jobs").select("created_by").eq("id", form.job_id).maybeSingle();
+      ownerId = (job as { created_by: string | null } | null)?.created_by ?? null;
+    }
+
     // Only include fields that actually have a value so we don't null-out column defaults.
     const candidateInsert: Record<string, unknown> = {
       tenant_id: form.tenant_id,
@@ -135,6 +143,7 @@ export async function ingestMetaLead(
       external_source: "meta_lead_ads",
       external_id: leadgenId,
       category: "active",
+      owner_id: ownerId,
       middle_name: mapped.middle_name,
       last_name: mapped.last_name,
       email: mapped.email,
