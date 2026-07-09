@@ -19,9 +19,19 @@ function isAppView(v: string): v is typeof APP_VIEWS[number] {
   return (APP_VIEWS as readonly string[]).includes(v);
 }
 
-export default async function CandidatesPage({ searchParams }: { searchParams: Promise<{ view?: string; job?: string }> }) {
+/** Strip characters that would break a PostgREST or()/ilike filter string. */
+function sanitizeSearch(raw?: string): string {
+  return (raw ?? "").replace(/[,()%*\\]/g, " ").trim();
+}
+
+export default async function CandidatesPage({
+  searchParams
+}: {
+  searchParams: Promise<{ view?: string; job?: string; stage?: string; source?: string; q?: string }>;
+}) {
   const params = await searchParams;
   const view = params.view ?? "my";
+  const search = sanitizeSearch(params.q);
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -43,6 +53,14 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
 
     if (params.job) q = q.eq("job_id", params.job);
     if (view === "my" && user) q = q.eq("candidates.owner_id", user.id);
+    if (params.stage) q = q.eq("current_stage_id", params.stage);
+    if (params.source) q = q.eq("candidates.source", params.source);
+    if (search) {
+      q = q.or(
+        `first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`,
+        { referencedTable: "candidates" }
+      );
+    }
 
     const { data: applications } = await q;
     rows = (applications ?? []).map((a: any) => ({
@@ -67,7 +85,7 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
   } else if (view in CAT_VIEWS) {
     // Candidate-centric: one row per candidate, embeds latest application for context.
     const cat = CAT_VIEWS[view];
-    const { data: candidates } = await supabase
+    let cq = supabase
       .from("candidates")
       .select(`
         id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, category, updated_at,
@@ -76,6 +94,13 @@ export default async function CandidatesPage({ searchParams }: { searchParams: P
       .eq("category", cat)
       .order("updated_at", { ascending: false })
       .limit(500);
+
+    if (params.source) cq = cq.eq("source", params.source);
+    if (search) {
+      cq = cq.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
+    }
+
+    const { data: candidates } = await cq;
 
     rows = (candidates ?? []).map((c: any) => {
       const apps = (c.applications ?? []) as any[];

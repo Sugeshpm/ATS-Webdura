@@ -86,6 +86,38 @@ export async function listPages(userToken: string): Promise<MetaPageWithToken[]>
   return res.data ?? [];
 }
 
+/**
+ * Subscribe a Page to THIS app's webhook for `leadgen` events. Without this,
+ * Meta never pushes new leads to our webhook, so real-time ingest can't happen.
+ * Idempotent — re-subscribing an already-subscribed Page is a no-op success.
+ * Requires the `pages_manage_metadata` permission on the Page token.
+ */
+export async function subscribePageToLeadgen(pageToken: string, pageId: string): Promise<void> {
+  const res = await fetch(`${BASE}/${pageId}/subscribed_apps`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ subscribed_fields: "leadgen", access_token: pageToken }),
+    cache: "no-store"
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    success?: boolean;
+    error?: { message?: string; code?: number };
+  };
+  if (!res.ok || body?.success === false) {
+    throw new MetaGraphError(
+      body?.error?.message ?? `Page webhook subscription failed: ${res.status}`,
+      body?.error?.code,
+      res.status
+    );
+  }
+}
+
+/** Whether a Page is currently subscribed to this app for `leadgen`. */
+export async function isPageSubscribedToLeadgen(pageToken: string, pageId: string): Promise<boolean> {
+  const res = await graph<{ data?: { subscribed_fields?: string[] }[] }>(`/${pageId}/subscribed_apps`, pageToken);
+  return (res.data ?? []).some((a) => (a.subscribed_fields ?? []).includes("leadgen"));
+}
+
 /** List all Lead Ad forms owned by a Page. */
 export async function listForms(token: string, pageId: string): Promise<MetaLeadForm[]> {
   const res = await graph<{ data: MetaLeadForm[] }>(`/${pageId}/leadgen_forms`, token, {

@@ -12,10 +12,12 @@ import { encrypt, decrypt } from "@/lib/crypto/encrypt";
  */
 
 // Permissions the connect flow needs. `leads_retrieval` requires Meta App Review.
+// `pages_manage_metadata` is required to subscribe a Page to our webhook (real-time leads).
 export const META_OAUTH_SCOPES = [
   "pages_show_list",
   "pages_read_engagement",
   "pages_manage_ads",
+  "pages_manage_metadata",
   "leads_retrieval",
   "business_management"
 ].join(",");

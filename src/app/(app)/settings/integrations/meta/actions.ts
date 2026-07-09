@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/admin";
 import { encrypt, decrypt } from "@/lib/crypto/encrypt";
-import { getForm, listForms, listPages, MetaGraphError } from "@/lib/meta/graph";
+import { getForm, listForms, listPages, subscribePageToLeadgen, MetaGraphError } from "@/lib/meta/graph";
 import { clearMetaOAuthSession, readMetaOAuthSession } from "@/lib/meta/oauth";
 
 async function requireAdmin() {
@@ -125,6 +125,33 @@ export async function registerFormViaOAuth(input: {
 
     revalidatePath("/settings/integrations/meta/forms");
     revalidatePath("/settings/integrations/meta");
+
+    // Subscribe the Page to our webhook so leads arrive in real time (not just on
+    // manual sync). Non-fatal — the form is saved either way.
+    try {
+      await subscribePageToLeadgen(resolved.page.access_token, input.page_id);
+    } catch (e) {
+      const msg = e instanceof MetaGraphError ? e.message : (e as Error).message;
+      return { ok: true as const, warning: `Saved, but real-time delivery couldn't be enabled: ${msg}. Leads still arrive via Sync now.` };
+    }
+    return { ok: true as const };
+  } catch (e) {
+    return { ok: false as const, error: e instanceof MetaGraphError ? e.message : (e as Error).message };
+  }
+}
+
+/**
+ * (Re)subscribe a Page to our webhook for real-time leads. Uses the current OAuth
+ * session's Page token, so it works for Pages connected before we added the
+ * subscription step. Requires re-login if the session lacks pages_manage_metadata.
+ */
+export async function enablePageRealtime(pageId: string) {
+  const ctx = await requireAdmin();
+  if (!ctx.ok) return { ok: false as const, error: ctx.error };
+  try {
+    const resolved = await pageFromSession(pageId);
+    if (!resolved.ok) return resolved;
+    await subscribePageToLeadgen(resolved.page.access_token, pageId);
     return { ok: true as const };
   } catch (e) {
     return { ok: false as const, error: e instanceof MetaGraphError ? e.message : (e as Error).message };

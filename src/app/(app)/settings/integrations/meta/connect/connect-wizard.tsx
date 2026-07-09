@@ -1,12 +1,12 @@
 "use client";
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronRight, Loader2, RefreshCw } from "lucide-react";
+import { Check, ChevronRight, Loader2, RefreshCw, Zap } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toast";
-import { metaOAuthListForms, registerFormViaOAuth, endMetaOAuthSession } from "../actions";
+import { metaOAuthListForms, registerFormViaOAuth, enablePageRealtime, endMetaOAuthSession } from "../actions";
 import { FieldMappingDialog } from "../forms/field-mapping-dialog";
 
 interface Page { id: string; name: string; category: string | null }
@@ -29,6 +29,7 @@ export function ConnectWizard({
   const [jobByForm, setJobByForm] = React.useState<Record<string, string>>({});
   const [registered, setRegistered] = React.useState<Set<string>>(new Set(registeredFormIds));
   const [pendingForm, setPendingForm] = React.useState<string | null>(null);
+  const [subscribing, setSubscribing] = React.useState(false);
 
   async function loadForms(page: Page) {
     setSelectedPage(page);
@@ -60,8 +61,19 @@ export function ConnectWizard({
       return;
     }
     setRegistered((prev) => new Set(prev).add(form.id));
-    toast.success(`Synced "${form.name}". Use “Map fields” to control which questions fill the profile.`);
+    const warning = (res as { warning?: string }).warning;
+    if (warning) toast.warning(warning);
+    else toast.success(`Synced "${form.name}". Real-time delivery is on. Use “Map fields” to control which questions fill the profile.`);
     router.refresh();
+  }
+
+  async function enableRealtime() {
+    if (!selectedPage) return;
+    setSubscribing(true);
+    const res = await enablePageRealtime(selectedPage.id);
+    setSubscribing(false);
+    if (!res.ok) return toast.error(`Couldn't enable real-time: ${res.error}`);
+    toast.success(`Real-time lead delivery enabled for “${selectedPage.name}”.`);
   }
 
   async function finish() {
@@ -134,9 +146,15 @@ export function ConnectWizard({
               </CardTitle>
               <CardDescription>Forms on “{selectedPage.name}”. Assign a job, sync the form, then map its fields.</CardDescription>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => loadForms(selectedPage)} disabled={loadingForms} title="Refresh forms">
-              <RefreshCw className={"h-3.5 w-3.5 " + (loadingForms ? "animate-spin" : "")} />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="sm" onClick={enableRealtime} disabled={subscribing} title="Subscribe this Page to real-time lead delivery">
+                {subscribing ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Zap className="mr-1 h-3.5 w-3.5" />}
+                Enable real-time
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => loadForms(selectedPage)} disabled={loadingForms} title="Refresh forms">
+                <RefreshCw className={"h-3.5 w-3.5 " + (loadingForms ? "animate-spin" : "")} />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {loadingForms && (
