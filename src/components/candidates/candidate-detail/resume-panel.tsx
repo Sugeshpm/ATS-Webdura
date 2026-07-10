@@ -5,6 +5,7 @@ import { Download, ExternalLink, FileText, Upload, Maximize2 } from "lucide-reac
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
+import { resolveResumeUrl } from "@/lib/resume-url";
 import { formatDate } from "@/lib/utils";
 
 interface Document {
@@ -44,16 +45,12 @@ export function ResumePanel({ candidateId, tenantId, resume }: Props) {
     if (!resume) { setUrl(null); return; }
     let cancelled = false;
     setLoading(true);
-    const supabase = createClient();
-    supabase.storage
-      .from(resume.storage_bucket)
-      .createSignedUrl(resume.storage_path, 60 * 30)
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        setLoading(false);
-        if (error || !data) { toast.error(error?.message ?? "Couldn't load resume."); return; }
-        setUrl(data.signedUrl);
-      });
+    resolveResumeUrl(resume).then(({ url: resolved, error }) => {
+      if (cancelled) return;
+      setLoading(false);
+      if (error || !resolved) { toast.error(error ?? "Couldn't load resume."); return; }
+      setUrl(resolved);
+    });
     return () => { cancelled = true; };
   }, [resume]);
 

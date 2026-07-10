@@ -12,7 +12,9 @@
     "db:reset": "supabase db reset",
     "db:push": "supabase db push",
     "cleanup:orphan-resumes": "node scripts/cleanup-orphan-resumes.mjs",
-    "cleanup:orphan-resumes:apply": "node scripts/cleanup-orphan-resumes.mjs --delete"
+    "cleanup:orphan-resumes:apply": "node scripts/cleanup-orphan-resumes.mjs --delete",
+    "migrate:resumes-to-public": "node scripts/migrate-resumes-to-public.mjs",
+    "migrate:resumes-to-public:apply": "node scripts/migrate-resumes-to-public.mjs --apply"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

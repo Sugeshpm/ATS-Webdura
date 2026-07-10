@@ -205,34 +205,32 @@ export async function POST(req: Request) {
               .maybeSingle();
 
             if (existingResume) {
-              // Already imported previously; leave the existing file + row untouched.
+              // Already imported previously; leave the existing documents row untouched.
               resumeOk = true;
             } else {
               try {
-                const buffer = await fs.readFile(absPath);
+                // Confirm the file exists on disk (throws ENOENT if not) — we don't upload
+                // anywhere, we just record the public-folder path so the app serves it
+                // directly from /Resumes/<...>. Files are committed to git.
+                const stat = await fs.stat(absPath);
                 const fileName = path.basename(absPath);
                 const mime = mimeForExt(fileName);
-                // Stable path: <tenant>/<candidate>/resume-<basename>. Overwrites on re-upload.
-                const storagePath = `${tenantId}/${candidateId}/resume-${fileName}`;
-                const { error: upErr } = await supabase.storage.from("resumes")
-                  .upload(storagePath, buffer, { contentType: mime, upsert: true });
-                if (upErr) {
-                  failures.push(`${rowLabel}: resume upload failed (${upErr.message})`);
-                } else {
-                  const { error: docErr } = await supabase.from("documents").insert({
-                    tenant_id: tenantId, candidate_id: candidateId, kind: "resume",
-                    name: fileName, mime, size_bytes: buffer.length,
-                    storage_bucket: "resumes", storage_path: storagePath, uploaded_by: user.id
-                  } as never);
-                  if (docErr) failures.push(`${rowLabel}: resume uploaded but link failed (${docErr.message})`);
-                  else { resumesUploaded++; resumeOk = true; }
-                }
+                // Storage path is the CSV-relative path under public/Resumes/ (e.g. "Content Writer/Alfina L.pdf").
+                const relPath = resumeRel.replace(/^[\\/]+/, "").replace(/\\/g, "/");
+
+                const { error: docErr } = await supabase.from("documents").insert({
+                  tenant_id: tenantId, candidate_id: candidateId, kind: "resume",
+                  name: fileName, mime, size_bytes: stat.size,
+                  storage_bucket: "public_resumes", storage_path: relPath, uploaded_by: user.id
+                } as never);
+                if (docErr) failures.push(`${rowLabel}: could not link resume (${docErr.message})`);
+                else { resumesUploaded++; resumeOk = true; }
               } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : String(err);
                 failures.push(
                   msg.includes("ENOENT")
                     ? `${rowLabel}: resume not found at public/Resumes/${resumeRel}`
-                    : `${rowLabel}: resume read failed (${msg})`
+                    : `${rowLabel}: resume check failed (${msg})`
                 );
               }
             }

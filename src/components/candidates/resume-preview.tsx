@@ -4,7 +4,7 @@ import { Eye, Download, ExternalLink } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
-import { createClient } from "@/lib/supabase/client";
+import { resolveResumeUrl } from "@/lib/resume-url";
 
 interface Props {
   document: {
@@ -24,16 +24,10 @@ export function ResumePreviewButton({ document }: Props) {
   async function loadSignedUrl() {
     if (!document) return;
     setLoading(true);
-    const supabase = createClient();
-    const { data, error } = await supabase.storage
-      .from(document.storage_bucket)
-      .createSignedUrl(document.storage_path, 60 * 30); // 30 min
+    const { url: resolved, error } = await resolveResumeUrl(document);
     setLoading(false);
-    if (error || !data) {
-      toast.error(error?.message ?? "Could not load the resume.");
-      return;
-    }
-    setUrl(data.signedUrl);
+    if (error || !resolved) { toast.error(error ?? "Could not load the resume."); return; }
+    setUrl(resolved);
   }
 
   function handleOpen(v: boolean) {
