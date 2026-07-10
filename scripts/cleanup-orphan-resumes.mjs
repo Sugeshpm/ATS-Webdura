@@ -77,13 +77,14 @@ const supabase = createClient(url, key, { auth: { persistSession: false } });
 
 // ---------- Fetch orphan paths ----------
 console.log("Fetching orphan resume paths…");
-const { data: rows, error: rpcErr } = await supabase.rpc("list_orphan_resume_paths");
+const { data, error: rpcErr } = await supabase.rpc("list_orphan_resume_paths");
 if (rpcErr) {
   console.error("RPC failed:", rpcErr.message);
   console.error("Did you run the CREATE FUNCTION statement in the SQL editor?");
   process.exit(1);
 }
-const paths = (rows ?? []).map((r) => r.name).filter(Boolean);
+// The function returns a JSONB array of strings so the response isn't paginated by PostgREST.
+const paths = Array.isArray(data) ? data.filter(Boolean) : [];
 console.log(`Found ${paths.length} orphan objects in the 'resumes' bucket.`);
 
 if (!paths.length) {
