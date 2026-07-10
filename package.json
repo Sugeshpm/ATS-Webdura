@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "db:types": "supabase gen types typescript --linked --schema public > src/lib/types/database.ts",
     "db:reset": "supabase db reset",
-    "db:push": "supabase db push"
+    "db:push": "supabase db push",
+    "cleanup:orphan-resumes": "node scripts/cleanup-orphan-resumes.mjs",
+    "cleanup:orphan-resumes:apply": "node scripts/cleanup-orphan-resumes.mjs --delete"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
