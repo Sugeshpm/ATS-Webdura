@@ -186,7 +186,10 @@ export async function POST(req: Request) {
           }
         }
 
-        // Resume upload
+        // Resume upload — idempotent:
+        //   1. If the candidate already has a resume documents row, skip upload entirely.
+        //   2. Use a stable storage path (no timestamp) with upsert:true so any explicit
+        //      re-upload replaces the existing object instead of orphaning it.
         let resumeOk = false;
         const resumeRel = (r.Resume ?? r.resume ?? "").trim();
         if (resumeRel) {
@@ -194,31 +197,44 @@ export async function POST(req: Request) {
           if (!absPath) {
             failures.push(`${rowLabel}: unsafe resume path "${resumeRel}"`);
           } else {
-            try {
-              const buffer = await fs.readFile(absPath);
-              const fileName = path.basename(absPath);
-              const mime = mimeForExt(fileName);
-              const storagePath = `${tenantId}/${candidateId}/${Date.now()}-${fileName}`;
-              const { error: upErr } = await supabase.storage.from("resumes")
-                .upload(storagePath, buffer, { contentType: mime, upsert: false });
-              if (upErr) {
-                failures.push(`${rowLabel}: resume upload failed (${upErr.message})`);
-              } else {
-                const { error: docErr } = await supabase.from("documents").insert({
-                  tenant_id: tenantId, candidate_id: candidateId, kind: "resume",
-                  name: fileName, mime, size_bytes: buffer.length,
-                  storage_bucket: "resumes", storage_path: storagePath, uploaded_by: user.id
-                } as never);
-                if (docErr) failures.push(`${rowLabel}: resume uploaded but link failed (${docErr.message})`);
-                else { resumesUploaded++; resumeOk = true; }
+            const { data: existingResume } = await supabase.from("documents")
+              .select("id")
+              .eq("candidate_id", candidateId)
+              .eq("kind", "resume")
+              .limit(1)
+              .maybeSingle();
+
+            if (existingResume) {
+              // Already imported previously; leave the existing file + row untouched.
+              resumeOk = true;
+            } else {
+              try {
+                const buffer = await fs.readFile(absPath);
+                const fileName = path.basename(absPath);
+                const mime = mimeForExt(fileName);
+                // Stable path: <tenant>/<candidate>/resume-<basename>. Overwrites on re-upload.
+                const storagePath = `${tenantId}/${candidateId}/resume-${fileName}`;
+                const { error: upErr } = await supabase.storage.from("resumes")
+                  .upload(storagePath, buffer, { contentType: mime, upsert: true });
+                if (upErr) {
+                  failures.push(`${rowLabel}: resume upload failed (${upErr.message})`);
+                } else {
+                  const { error: docErr } = await supabase.from("documents").insert({
+                    tenant_id: tenantId, candidate_id: candidateId, kind: "resume",
+                    name: fileName, mime, size_bytes: buffer.length,
+                    storage_bucket: "resumes", storage_path: storagePath, uploaded_by: user.id
+                  } as never);
+                  if (docErr) failures.push(`${rowLabel}: resume uploaded but link failed (${docErr.message})`);
+                  else { resumesUploaded++; resumeOk = true; }
+                }
+              } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : String(err);
+                failures.push(
+                  msg.includes("ENOENT")
+                    ? `${rowLabel}: resume not found at public/Resumes/${resumeRel}`
+                    : `${rowLabel}: resume read failed (${msg})`
+                );
               }
-            } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : String(err);
-              failures.push(
-                msg.includes("ENOENT")
-                  ? `${rowLabel}: resume not found at public/Resumes/${resumeRel}`
-                  : `${rowLabel}: resume read failed (${msg})`
-              );
             }
           }
         }
