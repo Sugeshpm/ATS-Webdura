@@ -6,37 +6,41 @@ export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const supabase = await createClient();
+
+  // Any query that hits a table which might not exist yet (e.g. the auth-allowlist
+  // migration hasn't been applied) is wrapped so its rejection doesn't nuke the whole page.
+  const safeCount = async (p: PromiseLike<{ count: number | null }>) => {
+    try { const r = await p; return r.count ?? 0; } catch { return 0; }
+  };
+  const safeSingle = async <T,>(p: PromiseLike<{ data: T | null }>) => {
+    try { const r = await p; return r.data; } catch { return null; }
+  };
+
   const [
-    { data: tenant },
-    { count: deptCount },
-    { count: locCount },
-    { count: stageCount },
-    { count: userCount },
-    { count: tplCount },
-    { count: metaFormsCount },
-    { count: allowedDomainsCount },
-    { count: whitelistCount }
+    tenant,
+    deptCount, locCount, stageCount, userCount, tplCount, metaFormsCount,
+    allowedDomainsCount, whitelistCount
   ] = await Promise.all([
-    supabase.from("tenants").select("name, slug, time_zone").single(),
-    supabase.from("departments").select("id", { count: "exact", head: true }).eq("is_archived", false),
-    supabase.from("locations").select("id", { count: "exact", head: true }).eq("is_archived", false),
-    supabase.from("stages").select("id", { count: "exact", head: true }).eq("is_archived", false),
-    supabase.from("profiles").select("id", { count: "exact", head: true }),
-    supabase.from("templates").select("id", { count: "exact", head: true }),
-    supabase.from("meta_lead_forms").select("id", { count: "exact", head: true }).eq("is_active", true),
-    supabase.from("auth_allowed_domains").select("domain", { count: "exact", head: true }),
-    supabase.from("auth_email_whitelist").select("email", { count: "exact", head: true })
+    safeSingle(supabase.from("tenants").select("name, slug, time_zone").single()),
+    safeCount(supabase.from("departments").select("id", { count: "exact", head: true }).eq("is_archived", false)),
+    safeCount(supabase.from("locations").select("id", { count: "exact", head: true }).eq("is_archived", false)),
+    safeCount(supabase.from("stages").select("id", { count: "exact", head: true }).eq("is_archived", false)),
+    safeCount(supabase.from("profiles").select("id", { count: "exact", head: true })),
+    safeCount(supabase.from("templates").select("id", { count: "exact", head: true })),
+    safeCount(supabase.from("meta_lead_forms").select("id", { count: "exact", head: true }).eq("is_active", true)),
+    safeCount(supabase.from("auth_allowed_domains").select("domain", { count: "exact", head: true })),
+    safeCount(supabase.from("auth_email_whitelist").select("email", { count: "exact", head: true }))
   ]);
 
   const cards = [
-    { href: "/settings/organisation", title: "Organisation",  desc: `Name, logo, brand. Current: ${tenant?.name ?? "—"}` },
-    { href: "/settings/users",        title: "Users & roles", desc: `${userCount ?? 0} member${userCount === 1 ? "" : "s"}` },
-    { href: "/settings/access",       title: "Access control", desc: `${allowedDomainsCount ?? 0} domain${allowedDomainsCount === 1 ? "" : "s"}, ${whitelistCount ?? 0} whitelisted email${whitelistCount === 1 ? "" : "s"}` },
-    { href: "/settings/departments",  title: "Departments",   desc: `${deptCount ?? 0} department${deptCount === 1 ? "" : "s"}` },
-    { href: "/settings/locations",    title: "Locations",     desc: `${locCount ?? 0} location${locCount === 1 ? "" : "s"}` },
-    { href: "/settings/stages",       title: "Pipeline stages", desc: `${stageCount ?? 0} active stage${stageCount === 1 ? "" : "s"}` },
-    { href: "/settings/templates",    title: "Templates",     desc: `${tplCount ?? 0} template${tplCount === 1 ? "" : "s"} — email, WhatsApp, offer letter, scorecards` },
-    { href: "/settings/integrations", title: "Integrations",  desc: `Meta Lead Ads · ${metaFormsCount ?? 0} form${(metaFormsCount ?? 0) === 1 ? "" : "s"} connected` }
+    { href: "/settings/organisation", title: "Organisation",  desc: `Name, logo, brand. Current: ${(tenant as { name?: string } | null)?.name ?? "—"}` },
+    { href: "/settings/users",        title: "Users & roles", desc: `${userCount} member${userCount === 1 ? "" : "s"}` },
+    { href: "/settings/access",       title: "Access control", desc: `${allowedDomainsCount} domain${allowedDomainsCount === 1 ? "" : "s"}, ${whitelistCount} whitelisted email${whitelistCount === 1 ? "" : "s"}` },
+    { href: "/settings/departments",  title: "Departments",   desc: `${deptCount} department${deptCount === 1 ? "" : "s"}` },
+    { href: "/settings/locations",    title: "Locations",     desc: `${locCount} location${locCount === 1 ? "" : "s"}` },
+    { href: "/settings/stages",       title: "Pipeline stages", desc: `${stageCount} active stage${stageCount === 1 ? "" : "s"}` },
+    { href: "/settings/templates",    title: "Templates",     desc: `${tplCount} template${tplCount === 1 ? "" : "s"} — email, WhatsApp, offer letter, scorecards` },
+    { href: "/settings/integrations", title: "Integrations",  desc: `Meta Lead Ads · ${metaFormsCount} form${metaFormsCount === 1 ? "" : "s"} connected` }
   ];
 
   return (
