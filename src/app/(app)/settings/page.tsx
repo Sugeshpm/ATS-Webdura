@@ -13,7 +13,9 @@ export default async function SettingsPage() {
     { count: stageCount },
     { count: userCount },
     { count: tplCount },
-    { count: metaFormsCount }
+    { count: metaFormsCount },
+    { count: allowedDomainsCount },
+    { count: whitelistCount }
   ] = await Promise.all([
     supabase.from("tenants").select("name, slug, time_zone").single(),
     supabase.from("departments").select("id", { count: "exact", head: true }).eq("is_archived", false),
@@ -21,12 +23,15 @@ export default async function SettingsPage() {
     supabase.from("stages").select("id", { count: "exact", head: true }).eq("is_archived", false),
     supabase.from("profiles").select("id", { count: "exact", head: true }),
     supabase.from("templates").select("id", { count: "exact", head: true }),
-    supabase.from("meta_lead_forms").select("id", { count: "exact", head: true }).eq("is_active", true)
+    supabase.from("meta_lead_forms").select("id", { count: "exact", head: true }).eq("is_active", true),
+    supabase.from("auth_allowed_domains").select("domain", { count: "exact", head: true }),
+    supabase.from("auth_email_whitelist").select("email", { count: "exact", head: true })
   ]);
 
   const cards = [
     { href: "/settings/organisation", title: "Organisation",  desc: `Name, logo, brand. Current: ${tenant?.name ?? "—"}` },
     { href: "/settings/users",        title: "Users & roles", desc: `${userCount ?? 0} member${userCount === 1 ? "" : "s"}` },
+    { href: "/settings/access",       title: "Access control", desc: `${allowedDomainsCount ?? 0} domain${allowedDomainsCount === 1 ? "" : "s"}, ${whitelistCount ?? 0} whitelisted email${whitelistCount === 1 ? "" : "s"}` },
     { href: "/settings/departments",  title: "Departments",   desc: `${deptCount ?? 0} department${deptCount === 1 ? "" : "s"}` },
     { href: "/settings/locations",    title: "Locations",     desc: `${locCount ?? 0} location${locCount === 1 ? "" : "s"}` },
     { href: "/settings/stages",       title: "Pipeline stages", desc: `${stageCount ?? 0} active stage${stageCount === 1 ? "" : "s"}` },

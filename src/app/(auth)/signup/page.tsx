@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { signupAction } from "./actions";
+import { GoogleSignInButton } from "../google-button";
 
 export default async function SignupPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const params = await searchParams;
@@ -14,6 +15,18 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
         <CardTitle>Create your account</CardTitle>
         <CardDescription>An administrator will approve your request before you can sign in.</CardDescription>
       </CardHeader>
+      <CardContent className="space-y-4 pb-0">
+        <GoogleSignInButton label="Sign up with Google" />
+        <p className="text-[11px] text-muted-foreground">
+          Only <span className="font-medium">@webduratech.com</span> and <span className="font-medium">@webdura.in</span> addresses can register.
+          Contractors on other domains need an admin to add them to the allowlist first.
+        </p>
+        <div className="flex items-center gap-3 text-[11px] uppercase tracking-wider text-muted-foreground">
+          <div className="h-px flex-1 bg-border" />
+          <span>or use email &amp; password</span>
+          <div className="h-px flex-1 bg-border" />
+        </div>
+      </CardContent>
       <form action={signupAction}>
         <CardContent className="space-y-4">
           {params.error && (

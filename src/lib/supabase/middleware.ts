@@ -30,7 +30,9 @@ export async function updateSession(request: NextRequest) {
     || url.pathname.startsWith("/forgot-password")
     || url.pathname.startsWith("/reset-password")
     || url.pathname.startsWith("/auth");
-  const isPublicRoute = url.pathname.startsWith("/public") || url.pathname === "/";
+  const isPublicRoute = url.pathname.startsWith("/public")
+    || url.pathname.startsWith("/api/public")
+    || url.pathname === "/";
 
   if (!user && !isAuthRoute && !isPublicRoute) {
     url.pathname = "/login";

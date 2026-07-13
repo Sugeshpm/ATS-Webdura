@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { loginAction } from "./actions";
+import { GoogleSignInButton } from "../google-button";
 
 const STATUS_BANNERS: Record<string, { tone: "info" | "warn" | "block"; icon: React.ComponentType<{ className?: string }>; title: string; body: string }> = {
   pending: {
@@ -17,7 +18,7 @@ const STATUS_BANNERS: Record<string, { tone: "info" | "warn" | "block"; icon: Re
     tone: "block",
     icon: Ban,
     title: "Sign-in declined",
-    body: "An administrator declined this account. Reach out to your admin for next steps."
+    body: "This account isn't approved. Your email domain may not be on the allowlist, or an administrator declined it. Ask your admin to add you."
   },
   disabled: {
     tone: "warn",
@@ -37,6 +38,14 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <CardTitle>Sign in</CardTitle>
         <CardDescription>Welcome back. Enter your credentials to continue.</CardDescription>
       </CardHeader>
+      <CardContent className="space-y-4 pb-0">
+        <GoogleSignInButton label="Sign in with Google" />
+        <div className="flex items-center gap-3 text-[11px] uppercase tracking-wider text-muted-foreground">
+          <div className="h-px flex-1 bg-border" />
+          <span>or</span>
+          <div className="h-px flex-1 bg-border" />
+        </div>
+      </CardContent>
       <form action={loginAction}>
         <CardContent className="space-y-4">
           {params.signup === "pending" && (
