@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { BackToSettings } from "@/components/settings/back-link";
 import { initials, formatDate } from "@/lib/utils";
 import { approveUser, rejectUser, setUserStatus, changeRole, resendInvite, inviteUser } from "./actions";
+import { RoleChanger } from "./role-changer";
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +35,13 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  const { data: me } = await supabase.from("profiles").select("id, role").eq("id", user!.id).single();
-  const isAdmin = ["super_admin", "admin"].includes(me?.role ?? "");
+  if (!user) {
+    // Middleware should already prevent this, but guard just in case so we return a
+    // 302 instead of a 500 for edge cases (stale session cookie, race with logout).
+    return null;
+  }
+  const { data: me } = await supabase.from("profiles").select("id, role").eq("id", user.id).maybeSingle();
+  const isAdmin = ["super_admin", "admin"].includes((me as { role?: string } | null)?.role ?? "");
 
   const { data: allUsers } = await supabase
     .from("profiles")
@@ -136,18 +142,17 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2">
                     <Avatar className="h-7 w-7"><AvatarFallback className="text-[10px]">{initials(u.first_name, u.last_name)}</AvatarFallback></Avatar>
-                    <span>{u.first_name} {u.last_name}{u.id === me?.id && <span className="ml-1 text-xs text-muted-foreground">(you)</span>}</span>
+                    <span>{u.first_name} {u.last_name}{u.id === (me as { id?: string } | null)?.id && <span className="ml-1 text-xs text-muted-foreground">(you)</span>}</span>
                   </div>
                 </td>
                 <td className="px-3 py-2 text-muted-foreground">{u.email}</td>
                 <td className="px-3 py-2">
-                  {isAdmin && u.id !== me?.id ? (
-                    <form action={async (fd) => { "use server"; await changeRole(u.id, String(fd.get("role"))); }} className="inline-flex">
-                      <select name="role" defaultValue={u.role} onChange={(e) => (e.currentTarget.form as HTMLFormElement).requestSubmit()}
-                        className="h-7 rounded-md border border-input bg-transparent px-2 text-xs">
-                        {ROLES.map((r) => <option key={r} value={r}>{labelForRole(r)}</option>)}
-                      </select>
-                    </form>
+                  {isAdmin && u.id !== (me as { id?: string } | null)?.id ? (
+                    <RoleChanger
+                      userId={u.id}
+                      currentRole={u.role}
+                      action={async (fd) => { "use server"; await changeRole(String(fd.get("user_id")), String(fd.get("role"))); }}
+                    />
                   ) : <Badge variant="outline">{labelForRole(u.role)}</Badge>}
                 </td>
                 <td className="px-3 py-2"><StatusBadge status={u.status} /></td>
@@ -156,7 +161,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
                 {isAdmin && (
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap justify-end gap-1">
-                      <RowActions targetId={u.id} email={u.email} status={u.status} isSelf={u.id === me?.id} />
+                      <RowActions targetId={u.id} email={u.email} status={u.status} isSelf={u.id === (me as { id?: string } | null)?.id} />
                     </div>
                   </td>
                 )}
