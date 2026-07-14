@@ -42,7 +42,7 @@ export default async function CandidatesPage({
     let q = supabase
       .from("applications")
       .select(`
-        id, applied_at, updated_at,
+        id, applied_at, updated_at, current_stage_id,
         candidate:candidates!inner ( id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, owner_id, category ),
         job:jobs!inner ( id, title ),
         stage:stages ( id, name )
@@ -63,12 +63,19 @@ export default async function CandidatesPage({
     }
 
     const { data: applications } = await q;
-    rows = (applications ?? []).map((a: any) => ({
+    const apps = (applications ?? []) as any[];
+
+    // Batch-fetch each candidate's latest resume document (skipped if there are no rows).
+    const candidateIds = apps.map((a) => a.candidate?.id).filter(Boolean) as string[];
+    const resumeByCandidate = await fetchLatestResumes(supabase, candidateIds);
+
+    rows = apps.map((a) => ({
       application_id: a.id,
       candidate_id: a.candidate?.id ?? "",
       first_name: a.candidate?.first_name ?? "",
       last_name: a.candidate?.last_name ?? null,
       job_title: a.job?.title ?? null,
+      stage_id: a.current_stage_id ?? null,
       stage_name: a.stage?.name ?? null,
       experience_years: a.candidate?.experience_years ?? null,
       experience_months: a.candidate?.experience_months ?? null,
@@ -80,7 +87,8 @@ export default async function CandidatesPage({
       preferred_location: a.candidate?.preferred_location ?? null,
       current_company: a.candidate?.current_company ?? null,
       gender: a.candidate?.gender ?? null,
-      category: a.candidate?.category ?? "active"
+      category: a.candidate?.category ?? "active",
+      resume_document: resumeByCandidate.get(a.candidate?.id ?? "") ?? null
     }));
   } else if (view in CAT_VIEWS) {
     // Candidate-centric: one row per candidate, embeds latest application for context.
@@ -89,7 +97,7 @@ export default async function CandidatesPage({
       .from("candidates")
       .select(`
         id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, category, updated_at,
-        applications ( id, applied_at, updated_at, job:jobs(title), stage:stages(name) )
+        applications ( id, applied_at, updated_at, current_stage_id, job:jobs(title), stage:stages(name) )
       `)
       .eq("category", cat)
       .order("updated_at", { ascending: false })
@@ -101,8 +109,11 @@ export default async function CandidatesPage({
     }
 
     const { data: candidates } = await cq;
+    const cRows = (candidates ?? []) as any[];
+    const candidateIds = cRows.map((c) => c.id);
+    const resumeByCandidate = await fetchLatestResumes(supabase, candidateIds);
 
-    rows = (candidates ?? []).map((c: any) => {
+    rows = cRows.map((c) => {
       const apps = (c.applications ?? []) as any[];
       const latest = apps.length ? apps.reduce((a, b) => (a.updated_at > b.updated_at ? a : b)) : null;
       return {
@@ -111,6 +122,7 @@ export default async function CandidatesPage({
         first_name: c.first_name,
         last_name: c.last_name,
         job_title: latest?.job?.title ?? null,
+        stage_id: latest?.current_stage_id ?? null,
         stage_name: latest?.stage?.name ?? null,
         experience_years: c.experience_years,
         experience_months: c.experience_months,
@@ -122,7 +134,8 @@ export default async function CandidatesPage({
         preferred_location: c.preferred_location,
         current_company: c.current_company,
         gender: c.gender,
-        category: c.category as CandidateCategory
+        category: c.category as CandidateCategory,
+        resume_document: resumeByCandidate.get(c.id) ?? null
       };
     });
   }
@@ -163,11 +176,37 @@ export default async function CandidatesPage({
         </div>
 
         <div className="mt-4">
-          <CandidateTable rows={rows} />
+          <CandidateTable rows={rows} stages={(stages ?? []) as { id: string; name: string }[]} />
         </div>
       </div>
     </div>
   );
+}
+
+async function fetchLatestResumes(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  candidateIds: string[]
+) {
+  const map = new Map<string, { id: string; name: string; mime: string | null; storage_bucket: string; storage_path: string }>();
+  if (!candidateIds.length) return map;
+
+  const { data } = await supabase
+    .from("documents")
+    .select("id, candidate_id, name, mime, storage_bucket, storage_path, created_at")
+    .in("candidate_id", candidateIds)
+    .eq("kind", "resume")
+    .order("created_at", { ascending: false });
+
+  for (const d of (data as Array<{ id: string; candidate_id: string; name: string; mime: string | null; storage_bucket: string; storage_path: string }> | null) ?? []) {
+    // Order desc → first seen per candidate is the newest; skip subsequent.
+    if (!map.has(d.candidate_id)) {
+      map.set(d.candidate_id, {
+        id: d.id, name: d.name, mime: d.mime,
+        storage_bucket: d.storage_bucket, storage_path: d.storage_path
+      });
+    }
+  }
+  return map;
 }
 
 function titleFor(view: string) {

@@ -151,3 +151,21 @@ export async function deleteNote(noteId: string) {
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
+
+/** List notes for one application. Used by the row-level Notes drawer (lazy loaded). */
+export async function listNotes(applicationId: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("notes")
+    .select("id, body, created_at, author:profiles!notes_author_id_fkey(id, first_name, last_name)")
+    .eq("application_id", applicationId)
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const, notes: (data ?? []) as unknown as Array<{
+    id: string;
+    body: string;
+    created_at: string;
+    author: { id: string | null; first_name: string | null; last_name: string | null } | null;
+  }> };
+}

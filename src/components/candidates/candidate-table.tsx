@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Mail, Phone, Trash2, X, Columns3, ChevronLeft, ChevronRight } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge, stageBadgeVariant } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
@@ -20,6 +20,10 @@ import {
 import { formatDate, initials, cn } from "@/lib/utils";
 import { deleteCandidates, type CandidateCategory } from "@/app/(app)/candidates/actions";
 import { MoveToMenu } from "@/components/candidates/move-to-menu";
+import { StagePickerBadge } from "@/components/candidates/stage-picker-badge";
+import { NotesQuickDrawer } from "@/components/candidates/notes-quick-drawer";
+import { ResumePreviewButton } from "@/components/candidates/resume-preview";
+import { createClient } from "@/lib/supabase/client";
 
 export type CandidateRow = {
   application_id: string | null;
@@ -27,6 +31,7 @@ export type CandidateRow = {
   first_name: string;
   last_name: string | null;
   job_title: string | null;
+  stage_id: string | null;
   stage_name: string | null;
   experience_years: number | null;
   experience_months: number | null;
@@ -39,6 +44,13 @@ export type CandidateRow = {
   current_company: string | null;
   gender: string | null;
   category: CandidateCategory;
+  resume_document: {
+    id: string;
+    name: string;
+    mime: string | null;
+    storage_bucket: string;
+    storage_path: string;
+  } | null;
 };
 
 const AVATAR_TONES = [
@@ -59,8 +71,13 @@ function avatarTone(seed: string) {
 // Column model — drives both the header and the body, and the visibility menu.
 // ---------------------------------------------------------------------------
 type ColumnKey =
-  | "candidate" | "job_title" | "stage" | "category" | "experience"
-  | "updated" | "contact" | "current_company" | "preferred_location" | "source" | "applied";
+  | "candidate" | "resume" | "job_title" | "stage" | "category" | "experience"
+  | "updated" | "contact" | "notes" | "current_company" | "preferred_location" | "source" | "applied";
+
+interface RenderCtx {
+  stages: { id: string; name: string }[];
+  currentUserId: string | null;
+}
 
 interface ColumnDef {
   key: ColumnKey;
@@ -69,7 +86,7 @@ interface ColumnDef {
   alwaysOn?: boolean;
   cellClassName?: string;
   headClassName?: string;
-  render: (r: CandidateRow) => React.ReactNode;
+  render: (r: CandidateRow, ctx: RenderCtx) => React.ReactNode;
 }
 
 const COLUMNS: ColumnDef[] = [
@@ -94,20 +111,19 @@ const COLUMNS: ColumnDef[] = [
     }
   },
   {
-    key: "job_title", label: "Job title", defaultVisible: true, cellClassName: "max-w-[180px] truncate",
-    render: (r) => r.job_title ?? <span className="text-muted-foreground">—</span>
+    key: "resume", label: "Resume", defaultVisible: true, cellClassName: "w-12",
+    render: (r) => <ResumePreviewButton document={r.resume_document} />
   },
   {
     key: "stage", label: "Stage", defaultVisible: true,
-    render: (r) => r.stage_name ? <Badge variant={stageBadgeVariant(r.stage_name)}>{r.stage_name}</Badge> : <span className="text-muted-foreground">—</span>
-  },
-  {
-    key: "category", label: "Category", defaultVisible: true,
-    render: (r) => <CategoryBadge value={r.category} />
-  },
-  {
-    key: "experience", label: "Experience", defaultVisible: true, cellClassName: "text-foreground/80",
-    render: (r) => <>{r.experience_years ?? 0}y {r.experience_months ?? 0}m</>
+    render: (r, ctx) => (
+      <StagePickerBadge
+        applicationId={r.application_id}
+        currentStageId={r.stage_id}
+        currentStageName={r.stage_name}
+        stages={ctx.stages}
+      />
+    )
   },
   {
     key: "contact", label: "Contact", defaultVisible: true,
@@ -122,6 +138,29 @@ const COLUMNS: ColumnDef[] = [
   {
     key: "updated", label: "Last updated", defaultVisible: true, cellClassName: "text-muted-foreground",
     render: (r) => formatDate(r.updated_at)
+  },
+  {
+    key: "notes", label: "Notes", defaultVisible: true, cellClassName: "w-12",
+    render: (r, ctx) => (
+      <NotesQuickDrawer
+        applicationId={r.application_id}
+        candidateName={`${r.first_name} ${r.last_name ?? ""}`.trim()}
+        currentUserId={ctx.currentUserId}
+      />
+    )
+  },
+  // -------- Hidden by default (available via the Columns menu) --------
+  {
+    key: "job_title", label: "Job title", defaultVisible: false, cellClassName: "max-w-[180px] truncate",
+    render: (r) => r.job_title ?? <span className="text-muted-foreground">—</span>
+  },
+  {
+    key: "category", label: "Category", defaultVisible: false,
+    render: (r) => <CategoryBadge value={r.category} />
+  },
+  {
+    key: "experience", label: "Experience", defaultVisible: false, cellClassName: "text-foreground/80",
+    render: (r) => <>{r.experience_years ?? 0}y {r.experience_months ?? 0}m</>
   },
   {
     key: "current_company", label: "Previous company", defaultVisible: false, cellClassName: "max-w-[160px] truncate text-foreground/80",
@@ -141,14 +180,28 @@ const COLUMNS: ColumnDef[] = [
   }
 ];
 
-const STORAGE_KEY = "ats.candidates.columns.v1";
+// v2: default column set changed (Job Title + Category removed, Resume + Notes added).
+const STORAGE_KEY = "ats.candidates.columns.v2";
 const PAGE_SIZES = [10, 25, 50, 100];
 
-export function CandidateTable({ rows }: { rows: CandidateRow[] }) {
+export function CandidateTable({
+  rows,
+  stages
+}: {
+  rows: CandidateRow[];
+  stages: { id: string; name: string }[];
+}) {
   const router = useRouter();
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [pending, setPending] = React.useState(false);
+  const [currentUserId, setCurrentUserId] = React.useState<string | null>(null);
+
+  // Fetch the current user id once so the notes drawer can decide who can edit/delete.
+  React.useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
+  }, []);
 
   // Column visibility — persisted per browser.
   const [visible, setVisible] = React.useState<Set<ColumnKey>>(
@@ -259,7 +312,7 @@ export function CandidateTable({ rows }: { rows: CandidateRow[] }) {
 
       <div className="overflow-x-auto rounded-xl border border-border bg-white shadow-card">
         <table className="min-w-full text-sm">
-          <thead className="bg-surface-sunken text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <thead className="sticky top-0 z-10 bg-surface-sunken text-[11px] font-semibold uppercase tracking-wider text-muted-foreground shadow-[0_1px_0_0_hsl(var(--border))]">
             <tr>
               <Th className="w-10 pl-4">
                 <Checkbox checked={allChecked} onCheckedChange={toggleAll} aria-label="Select all on page" />
@@ -282,7 +335,7 @@ export function CandidateTable({ rows }: { rows: CandidateRow[] }) {
                     <Checkbox checked={isSelected} onCheckedChange={() => toggle(r.candidate_id)} aria-label="Select row" />
                   </Td>
                   {visibleColumns.map((c) => (
-                    <Td key={c.key} className={c.cellClassName}>{c.render(r)}</Td>
+                    <Td key={c.key} className={c.cellClassName}>{c.render(r, { stages, currentUserId })}</Td>
                   ))}
                   <Td className="pr-4 text-right">
                     <MoveToMenu candidateIds={[r.candidate_id]} currentCategory={r.category} variant="icon" />
