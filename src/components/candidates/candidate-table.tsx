@@ -186,10 +186,12 @@ const PAGE_SIZES = [10, 25, 50, 100];
 
 export function CandidateTable({
   rows,
-  stages
+  stages,
+  emptyHint = null
 }: {
   rows: CandidateRow[];
   stages: { id: string; name: string }[];
+  emptyHint?: string | null;
 }) {
   const router = useRouter();
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
@@ -269,9 +271,9 @@ export function CandidateTable({
         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-secondary">
           <svg className="h-5 w-5 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="7" r="4" /><path d="M5 21v-2a7 7 0 0114 0v2" /></svg>
         </div>
-        <h3 className="text-sm font-semibold">No candidates here yet</h3>
+        <h3 className="text-sm font-semibold">{emptyHint ?? "No candidates here yet"}</h3>
         <p className="mx-auto mt-1 max-w-sm text-xs text-muted-foreground">
-          Add candidates via the &ldquo;+ Add Candidate&rdquo; button, import from CSV, or move existing candidates into this category.
+          Add candidates via the &ldquo;+ Add Candidate&rdquo; button, import from CSV, or move existing candidates into this category. If you changed the job-status filter, try switching between Active and Closed.
         </p>
       </div>
     );

@@ -1,23 +1,29 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import * as React from "react";
 import { Search, Info, Users, Calendar, MessageSquareQuote } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+type JobStatusFilter = "active" | "closed";
+
 interface Props {
-  activeJobs: { id: string; title: string; candidate_count: number }[];
+  jobStatus: JobStatusFilter;
+  jobs: { id: string; title: string; candidate_count: number }[];
   counts?: { my: number; upcomingInterviews: number; pendingFeedback: number };
 }
 
-export function CandidatesSidebar({ activeJobs, counts }: Props) {
+export function CandidatesSidebar({ jobStatus, jobs, counts }: Props) {
   const pathname = usePathname();
   const search = useSearchParams();
   const view = search.get("view") ?? "my";
   const filterJob = search.get("job");
+  const [jobQuery, setJobQuery] = React.useState("");
 
-  function urlFor(params: Record<string, string | null>) {
+  /** Build a URL that preserves every current search param, applying the given overrides. */
+  function urlFor(overrides: Record<string, string | null>) {
     const next = new URLSearchParams(search.toString());
-    Object.entries(params).forEach(([k, v]) => { if (v === null) next.delete(k); else next.set(k, v); });
+    Object.entries(overrides).forEach(([k, v]) => { if (v === null) next.delete(k); else next.set(k, v); });
     return `${pathname}${next.toString() ? `?${next}` : ""}`;
   }
 
@@ -26,6 +32,13 @@ export function CandidatesSidebar({ activeJobs, counts }: Props) {
     { href: urlFor({ view: "upcoming_interviews" }), label: "Upcoming interviews", icon: Calendar,          count: counts?.upcomingInterviews, active: view === "upcoming_interviews" },
     { href: urlFor({ view: "pending_feedback" }),    label: "Pending feedback",    icon: MessageSquareQuote, count: counts?.pendingFeedback,    active: view === "pending_feedback", info: true }
   ];
+
+  const filteredJobs = jobQuery.trim()
+    ? jobs.filter((j) => j.title.toLowerCase().includes(jobQuery.trim().toLowerCase()))
+    : jobs;
+
+  const jobsHeading = jobStatus === "closed" ? "Your closed jobs" : "Your active jobs";
+  const emptyMsg = jobStatus === "closed" ? "No closed jobs." : "No active jobs.";
 
   return (
     <aside className="hidden w-64 shrink-0 border-r border-border bg-white md:block">
@@ -66,16 +79,22 @@ export function CandidatesSidebar({ activeJobs, counts }: Props) {
 
       <div className="mt-5 border-t border-border px-3 pt-4 pb-4">
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Your active jobs</h3>
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{jobsHeading}</h3>
+          <span className="text-[10px] tabular-nums text-muted-foreground">{jobs.length}</span>
         </div>
 
         <label className="mb-3 flex items-center rounded-md border border-input bg-white px-2 transition-colors focus-within:border-ring focus-within:ring-1 focus-within:ring-ring">
           <Search className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
-          <input placeholder="Search job" className="h-8 w-full bg-transparent text-xs focus:outline-none" />
+          <input
+            placeholder="Search job"
+            value={jobQuery}
+            onChange={(e) => setJobQuery(e.target.value)}
+            className="h-8 w-full bg-transparent text-xs focus:outline-none"
+          />
         </label>
 
         <ul className="space-y-0.5">
-          {activeJobs.map((j) => {
+          {filteredJobs.map((j) => {
             const isActive = filterJob === j.id;
             return (
               <li key={j.id}>
@@ -99,7 +118,21 @@ export function CandidatesSidebar({ activeJobs, counts }: Props) {
               </li>
             );
           })}
-          {activeJobs.length === 0 && <li className="px-3 py-2 text-xs text-muted-foreground">No active jobs.</li>}
+          {filteredJobs.length === 0 && (
+            <li className="px-3 py-2 text-xs text-muted-foreground">
+              {jobs.length === 0 ? emptyMsg : "No jobs match your search."}
+            </li>
+          )}
+          {jobs.length > 0 && filterJob && (
+            <li className="pt-1">
+              <Link
+                href={urlFor({ job: null })}
+                className="block rounded-md px-3 py-1 text-[11px] text-muted-foreground hover:text-foreground"
+              >
+                Clear job filter
+              </Link>
+            </li>
+          )}
         </ul>
       </div>
     </aside>
