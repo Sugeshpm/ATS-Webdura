@@ -112,7 +112,7 @@ const COLUMNS: ColumnDef[] = [
   },
   {
     key: "resume", label: "Resume", defaultVisible: true, cellClassName: "w-12",
-    render: (r) => <ResumePreviewButton document={r.resume_document} />
+    render: (r) => <ResumePreviewButton document={r.resume_document} iconOnly />
   },
   {
     key: "stage", label: "Stage", defaultVisible: true,
