@@ -16,12 +16,15 @@ export const dynamic = "force-dynamic";
 
 const ALLOWED_TABS: JobDetailTab[] = ["dashboard", "candidates", "description"];
 
+const ALLOWED_PAGE_SIZES = new Set([10, 25, 50, 100]);
+const DEFAULT_PAGE_SIZE = 25;
+
 export default async function JobDetailPage({
   params,
   searchParams
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string; stage?: string }>;
+  searchParams: Promise<{ tab?: string; stage?: string; page?: string; pageSize?: string }>;
 }) {
   const { id } = await params;
   const sp = await searchParams;
@@ -29,17 +32,37 @@ export default async function JobDetailPage({
     ? (sp.tab as JobDetailTab)
     : "dashboard";
   const stageFilter = sp.stage ?? null;
+  const page = Math.max(0, Number.parseInt(sp.page ?? "0", 10) || 0);
+  const rawPageSize = Number.parseInt(sp.pageSize ?? "", 10) || DEFAULT_PAGE_SIZE;
+  const pageSize = ALLOWED_PAGE_SIZES.has(rawPageSize) ? rawPageSize : DEFAULT_PAGE_SIZE;
+  const rangeFrom = page * pageSize;
+  const rangeTo = rangeFrom + pageSize - 1;
 
   const supabase = await createClient();
 
-  // Fetch in parallel — same set whichever tab is active so navigation between
-  // tabs is fast (Next caches the shared data).
+  // Build the applications query up-front so we can apply the optional stage
+  // filter before we run it (needed so `count` matches the visible page).
+  let appsQuery = supabase
+    .from("applications")
+    .select(`
+      id, applied_at, updated_at, current_stage_id,
+      candidate:candidates!inner ( id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, category ),
+      stage:stages ( id, name )
+    `, { count: "exact" })
+    .eq("job_id", id)
+    .eq("is_archived", false)
+    .order("updated_at", { ascending: false })
+    .range(rangeFrom, rangeTo);
+  if (stageFilter) appsQuery = appsQuery.eq("current_stage_id", stageFilter);
+
+  // Fetch in parallel — everything needed by any tab on this page.
   const [
     { data: job },
     { data: funnel },
     { data: team },
-    { data: applications },
-    { count: upcomingInterviewsCount }
+    appsRes,
+    { count: upcomingInterviewsCount },
+    { data: tenantStages }
   ] = await Promise.all([
     supabase.from("v_jobs_with_counts").select("*").eq("id", id).single(),
     supabase.rpc("job_funnel", { p_job_id: id }),
@@ -47,35 +70,33 @@ export default async function JobDetailPage({
       .from("job_team")
       .select("user_id, role_on_job, user:profiles(first_name, last_name, email)")
       .eq("job_id", id),
-    supabase
-      .from("applications")
-      .select(`
-        id, applied_at, updated_at,
-        candidate:candidates!inner ( id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months ),
-        stage:stages ( id, name )
-      `)
-      .eq("job_id", id)
-      .eq("is_archived", false)
-      .order("updated_at", { ascending: false })
-      .limit(500),
-    // Count upcoming interviews for any application of this job
+    appsQuery,
     supabase
       .from("interviews")
       .select("id, application:applications!inner(job_id)", { count: "exact", head: true })
       .eq("application.job_id", id)
       .gte("scheduled_start", new Date().toISOString())
-      .eq("status", "scheduled")
+      .eq("status", "scheduled"),
+    // Tenant stage list — powers the row-level StagePickerBadge dropdown.
+    supabase.from("stages").select("id, name").eq("is_archived", false).order("order")
   ]);
 
   if (!job) return notFound();
 
-  // Build candidate rows for this job
-  const allRows: CandidateRow[] = (applications ?? []).map((a: any) => ({
+  const applications = (appsRes.data ?? []) as any[];
+  const applicationsTotal = appsRes.count ?? 0;
+
+  // Resume metadata for the visible page (icon in the row).
+  const candidateIds = applications.map((a) => a.candidate?.id).filter(Boolean) as string[];
+  const resumeByCandidate = await fetchLatestResumes(supabase, candidateIds);
+
+  const filteredRows: CandidateRow[] = applications.map((a) => ({
     application_id: a.id,
     candidate_id: a.candidate?.id ?? "",
     first_name: a.candidate?.first_name ?? "",
     last_name: a.candidate?.last_name ?? null,
     job_title: (job as { title: string }).title,
+    stage_id: a.current_stage_id ?? null,
     stage_name: a.stage?.name ?? null,
     experience_years: a.candidate?.experience_years ?? null,
     experience_months: a.candidate?.experience_months ?? null,
@@ -86,13 +107,10 @@ export default async function JobDetailPage({
     phone: a.candidate?.phone ?? null,
     preferred_location: a.candidate?.preferred_location ?? null,
     current_company: a.candidate?.current_company ?? null,
-    gender: a.candidate?.gender ?? null
+    gender: a.candidate?.gender ?? null,
+    category: a.candidate?.category ?? "active",
+    resume_document: resumeByCandidate.get(a.candidate?.id ?? "") ?? null
   }));
-
-  // Apply stage filter for the Candidates tab
-  const filteredRows = stageFilter
-    ? allRows.filter((r) => (applications ?? []).find((a: any) => a.id === r.application_id)?.stage?.id === stageFilter)
-    : allRows;
 
   const funnelRows = (funnel ?? []) as { stage_id: string; stage_name: string; stage_order: number; count: number }[];
 
@@ -154,6 +172,10 @@ export default async function JobDetailPage({
             rows={filteredRows}
             funnel={funnelRows}
             activeStageId={stageFilter}
+            stages={(tenantStages ?? []) as { id: string; name: string }[]}
+            total={applicationsTotal}
+            page={page}
+            pageSize={pageSize}
           />
         )}
 
@@ -167,4 +189,27 @@ export default async function JobDetailPage({
 
 function formatEmploymentType(t: string) {
   return t.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+async function fetchLatestResumes(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  candidateIds: string[]
+) {
+  const map = new Map<string, { id: string; name: string; mime: string | null; storage_bucket: string; storage_path: string }>();
+  if (!candidateIds.length) return map;
+  const { data } = await supabase
+    .from("documents")
+    .select("id, candidate_id, name, mime, storage_bucket, storage_path, created_at")
+    .in("candidate_id", candidateIds)
+    .eq("kind", "resume")
+    .order("created_at", { ascending: false });
+  for (const d of (data as Array<{ id: string; candidate_id: string; name: string; mime: string | null; storage_bucket: string; storage_path: string }> | null) ?? []) {
+    if (!map.has(d.candidate_id)) {
+      map.set(d.candidate_id, {
+        id: d.id, name: d.name, mime: d.mime,
+        storage_bucket: d.storage_bucket, storage_path: d.storage_path
+      });
+    }
+  }
+  return map;
 }

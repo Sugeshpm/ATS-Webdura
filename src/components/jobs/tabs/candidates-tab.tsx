@@ -8,10 +8,14 @@ interface Props {
   rows: CandidateRow[];
   funnel: FunnelRow[];
   activeStageId: string | null;
+  stages: { id: string; name: string }[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
-export function JobCandidatesTab({ jobId, rows, funnel, activeStageId }: Props) {
-  const total = funnel.reduce((sum, s) => sum + Number(s.count), 0);
+export function JobCandidatesTab({ jobId, rows, funnel, activeStageId, stages, total, page, pageSize }: Props) {
+  const funnelTotal = funnel.reduce((sum, s) => sum + Number(s.count), 0);
 
   return (
     <div className="space-y-4">
@@ -24,7 +28,7 @@ export function JobCandidatesTab({ jobId, rows, funnel, activeStageId }: Props) 
               className={pillClass(!activeStageId)}
             >
               <div className="text-[11px] uppercase tracking-wider opacity-70">All</div>
-              <div className="text-lg font-semibold tabular-nums">{total}</div>
+              <div className="text-lg font-semibold tabular-nums">{funnelTotal}</div>
             </Link>
           </li>
           {funnel.map((s) => (
@@ -41,7 +45,13 @@ export function JobCandidatesTab({ jobId, rows, funnel, activeStageId }: Props) 
         </ul>
       </div>
 
-      <CandidateTable rows={rows} />
+      <CandidateTable
+        rows={rows}
+        stages={stages}
+        total={total}
+        page={page}
+        pageSize={pageSize}
+      />
     </div>
   );
 }
