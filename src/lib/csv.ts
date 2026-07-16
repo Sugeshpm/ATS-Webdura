@@ -48,3 +48,13 @@ export function num(v: string | undefined | null): number | undefined {
   const n = Number(v);
   return Number.isFinite(n) ? n : undefined;
 }
+
+/**
+ * Coerce a string to an integer or undefined. Truncates the decimal — callers
+ * that want fractional years to spill into months should compute that
+ * separately (see the experience handling in /api/candidates/import).
+ */
+export function int(v: string | undefined | null): number | undefined {
+  const n = num(v);
+  return n === undefined ? undefined : Math.trunc(n);
+}

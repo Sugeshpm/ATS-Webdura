@@ -141,6 +141,16 @@ export async function POST(req: Request) {
           continue;
         }
 
+        // Experience — Postgres columns are integers, but users often write
+        // "1.5" in the years column meaning "1 year 6 months". Truncate years
+        // and spill the fractional part into months so we neither crash on
+        // decimal input nor silently lose the half-year.
+        const yearsRaw  = num(r.experience_years) ?? 0;
+        const monthsRaw = num(r.experience_months) ?? 0;
+        const expYears  = Math.trunc(yearsRaw);
+        const spillMonths = Math.round((yearsRaw - expYears) * 12);
+        const expMonths = Math.trunc(monthsRaw) + spillMonths;
+
         // Insert candidate
         const { data: cand, error: cErr } = await supabase.from("candidates").insert({
           tenant_id: tenantId,
@@ -154,8 +164,8 @@ export async function POST(req: Request) {
           current_company: r.current_company?.trim() || null,
           current_location: r.current_location?.trim() || null,
           preferred_location: r.preferred_location?.trim() || null,
-          experience_years: num(r.experience_years) ?? 0,
-          experience_months: num(r.experience_months) ?? 0,
+          experience_years: expYears,
+          experience_months: expMonths,
           current_salary: num(r.current_salary) ?? null,
           expected_salary: num(r.expected_salary) ?? null,
           source: r.source?.trim() || "csv_import",
