@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Mail, Phone, Trash2, X, Columns3, ChevronLeft, ChevronRight } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -187,16 +187,28 @@ const PAGE_SIZES = [10, 25, 50, 100];
 export function CandidateTable({
   rows,
   stages,
+  total,
+  page,
+  pageSize,
   emptyHint = null
 }: {
   rows: CandidateRow[];
   stages: { id: string; name: string }[];
+  /** Total row count for the current query (across all pages). */
+  total: number;
+  /** 0-indexed page currently being displayed. */
+  page: number;
+  /** Rows per page. */
+  pageSize: number;
   emptyHint?: string | null;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const search = useSearchParams();
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [pending, setPending] = React.useState(false);
+  const [navigating, startTransition] = React.useTransition();
   const [currentUserId, setCurrentUserId] = React.useState<string | null>(null);
 
   // Fetch the current user id once so the notes drawer can decide who can edit/delete.
@@ -230,17 +242,33 @@ export function CandidateTable({
 
   const visibleColumns = COLUMNS.filter((c) => visible.has(c.key));
 
-  // Pagination
-  const [pageSize, setPageSize] = React.useState(25);
-  const [page, setPage] = React.useState(0);
-  React.useEffect(() => { setPage(0); }, [rows, pageSize]);
-
-  const total = rows.length;
+  // Server-side pagination: `rows` IS the current page already.
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, pageCount - 1);
   const start = safePage * pageSize;
-  const pagedRows = rows.slice(start, start + pageSize);
-  const pageIds = pagedRows.map((r) => r.candidate_id);
+  const pageIds = rows.map((r) => r.candidate_id);
+
+  function navigateWith(overrides: Record<string, string | null>) {
+    const next = new URLSearchParams(search.toString());
+    for (const [k, v] of Object.entries(overrides)) {
+      if (v === null || v === "") next.delete(k);
+      else next.set(k, v);
+    }
+    const qs = next.toString();
+    startTransition(() => {
+      router.replace(qs ? `${pathname}?${qs}` : pathname);
+    });
+    // Clear any row selection so a "select all" from the old page doesn't carry over.
+    setSelected(new Set());
+  }
+
+  function goToPage(nextPage: number) {
+    // Encode page=0 as absence of the param, so shareable URLs stay clean.
+    navigateWith({ page: nextPage === 0 ? null : String(nextPage) });
+  }
+  function changePageSize(nextSize: number) {
+    navigateWith({ pageSize: nextSize === 25 ? null : String(nextSize), page: null });
+  }
 
   function toggle(id: string) {
     setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -286,7 +314,7 @@ export function CandidateTable({
       {/* Toolbar */}
       <div className="mb-2 flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          {total} candidate{total === 1 ? "" : "s"}
+          <span className="font-medium text-foreground">{total.toLocaleString()}</span> candidate{total === 1 ? "" : "s"}
           {selected.size > 0 && <span className="text-foreground"> · {selected.size} selected</span>}
         </p>
         <DropdownMenu>
@@ -325,8 +353,8 @@ export function CandidateTable({
               <Th className="w-12 pr-4 text-right">Actions</Th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border">
-            {pagedRows.map((r) => {
+          <tbody className={cn("divide-y divide-border transition-opacity", navigating && "opacity-60")}>
+            {rows.map((r) => {
               const isSelected = selected.has(r.candidate_id);
               return (
                 <tr
@@ -353,25 +381,26 @@ export function CandidateTable({
           <span className="text-muted-foreground">
             Showing <span className="font-medium text-foreground">{total === 0 ? 0 : start + 1}</span>–
             <span className="font-medium text-foreground">{Math.min(start + pageSize, total)}</span> of{" "}
-            <span className="font-medium text-foreground">{total}</span>
+            <span className="font-medium text-foreground">{total.toLocaleString()}</span>
           </span>
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-1.5 text-muted-foreground">
               Rows per page
               <select
                 value={pageSize}
-                onChange={(e) => setPageSize(Number(e.target.value))}
-                className="h-8 rounded-md border border-input bg-white px-2 text-xs"
+                onChange={(e) => changePageSize(Number(e.target.value))}
+                disabled={navigating}
+                className="h-8 rounded-md border border-input bg-white px-2 text-xs disabled:opacity-70"
               >
                 {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </label>
             <div className="flex items-center gap-1">
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => setPage(safePage - 1)} disabled={safePage <= 0} aria-label="Previous page">
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => goToPage(safePage - 1)} disabled={navigating || safePage <= 0} aria-label="Previous page">
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <span className="min-w-[5.5rem] text-center text-muted-foreground">Page {safePage + 1} of {pageCount}</span>
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => setPage(safePage + 1)} disabled={safePage >= pageCount - 1} aria-label="Next page">
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => goToPage(safePage + 1)} disabled={navigating || safePage >= pageCount - 1} aria-label="Next page">
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>

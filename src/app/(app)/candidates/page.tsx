@@ -1,8 +1,10 @@
+import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { CandidatesSidebar } from "@/components/candidates/sidebar";
 import { CandidatesSubTabs } from "@/components/candidates/sub-tabs";
 import { CandidateFilterBar } from "@/components/candidates/candidate-filter-bar";
 import { CandidateTable, type CandidateRow } from "@/components/candidates/candidate-table";
+import { CandidateTableSkeleton } from "@/components/candidates/candidate-table-skeleton";
 import { AddCandidateButton } from "@/components/candidates/add-candidate-button";
 import { BulkActions } from "@/components/shared/bulk-actions";
 import { JobStatusToggle, type JobStatusFilter } from "@/components/candidates/job-status-toggle";
@@ -16,46 +18,149 @@ const CAT_VIEWS: Record<string, CandidateCategory> = {
   archived: "archived",
   duplicates: "duplicate"
 };
+const ALLOWED_PAGE_SIZES = new Set([10, 25, 50, 100]);
+const DEFAULT_PAGE_SIZE = 25;
 
 function isAppView(v: string): v is typeof APP_VIEWS[number] {
   return (APP_VIEWS as readonly string[]).includes(v);
 }
-
 function normalizeStatus(raw?: string): JobStatusFilter {
   return raw === "closed" ? "closed" : "active";
 }
-
-/** Strip characters that would break a PostgREST or()/ilike filter string. */
 function sanitizeSearch(raw?: string): string {
   return (raw ?? "").replace(/[,()%*\\]/g, " ").trim();
+}
+
+interface DashboardData {
+  jobs: Array<{ id: string; title: string; candidate_count: number }>;
+  counts: { my: number; all: number; talent_pool: number; archived: number; duplicates: number };
 }
 
 export default async function CandidatesPage({
   searchParams
 }: {
-  searchParams: Promise<{ view?: string; status?: string; job?: string; stage?: string; source?: string; q?: string }>;
+  searchParams: Promise<{ view?: string; status?: string; job?: string; stage?: string; source?: string; q?: string; page?: string; pageSize?: string }>;
 }) {
   const params = await searchParams;
-  const view = params.view ?? "my";
+  // Default view is now "all" (tabs reordered — All is first). Any legacy link
+  // with ?view=my keeps working.
+  const view = params.view ?? "all";
   const jobStatus = normalizeStatus(params.status);
   const search = sanitizeSearch(params.q);
+  const page = Math.max(0, Number.parseInt(params.page ?? "0", 10) || 0);
+  const rawPageSize = Number.parseInt(params.pageSize ?? "", 10) || DEFAULT_PAGE_SIZE;
+  const pageSize = ALLOWED_PAGE_SIZES.has(rawPageSize) ? rawPageSize : DEFAULT_PAGE_SIZE;
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   // ---------------------------------------------------------------------------
-  // Build a set of candidate ids eligible under the current job-status filter.
-  // A candidate is eligible iff they have at least one application to a job of
-  // the requested status. Used for candidate-centric views (talent pool /
-  // archived / duplicates) where category doesn't imply an application join.
-  // For application-centric views we filter directly on `jobs.status`.
+  // Shell data: sidebar jobs + all 5 tab counts + stages. Fetched together in
+  // a single RPC + one small query. This is the only synchronous work — the
+  // row table is Suspense-boundaried below and streams in.
   // ---------------------------------------------------------------------------
-  const eligibleCandidateIds = await fetchEligibleCandidateIds(supabase, jobStatus);
+  const [dashRes, { data: stages }] = await Promise.all([
+    supabase.rpc("candidates_dashboard", { p_job_status: jobStatus, p_user_id: user?.id ?? null }),
+    supabase.from("stages").select("id, name").eq("is_archived", false).order("order")
+  ]);
+  const dash = (dashRes.data as DashboardData | null) ?? {
+    jobs: [],
+    counts: { my: 0, all: 0, talent_pool: 0, archived: 0, duplicates: 0 }
+  };
+
+  return (
+    <>
+      <CandidatesSubTabs counts={dash.counts} />
+      <div className="flex min-h-[calc(100vh-6rem)]">
+        <CandidatesSidebar
+          jobStatus={jobStatus}
+          jobs={dash.jobs}
+          counts={{ my: dash.counts.my, upcomingInterviews: 0, pendingFeedback: 0 }}
+        />
+
+        <div className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <header className="flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-baseline gap-3">
+                <h1 className="text-xl font-semibold tracking-tight">{titleFor(view)}</h1>
+                {/* Section-level count from the RPC — immediate, no waiting on the row query. */}
+                <span className="rounded-md bg-secondary px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">
+                  {(dash.counts[view as keyof DashboardData["counts"]] ?? 0).toLocaleString()}
+                </span>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">{subtitleFor(view, jobStatus)}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <JobStatusToggle value={jobStatus} />
+              <BulkActions kind="candidates" exportQuery={`?view=${view}&status=${jobStatus}${params.job ? `&job=${params.job}` : ""}`} />
+              <AddCandidateButton
+                jobs={dash.jobs.map((j) => ({ id: j.id, title: j.title }))}
+                stages={(stages ?? []) as never}
+              />
+            </div>
+          </header>
+
+          <div className="mt-5">
+            <CandidateFilterBar stages={(stages ?? []) as never} />
+          </div>
+
+          <div className="mt-4">
+            {/* Suspense boundary — shell above paints without waiting on the row query.
+                key= forces a fresh <Suspense> whenever the query changes so the skeleton
+                shows immediately during tab / status / page switches. */}
+            <Suspense
+              key={`${view}-${jobStatus}-${params.job ?? ""}-${params.stage ?? ""}-${params.source ?? ""}-${search}-${page}-${pageSize}`}
+              fallback={<CandidateTableSkeleton pageSize={pageSize} />}
+            >
+              <CandidateRowsPane
+                view={view}
+                jobStatus={jobStatus}
+                userId={user?.id ?? null}
+                jobFilter={params.job ?? null}
+                stageFilter={params.stage ?? null}
+                sourceFilter={params.source ?? null}
+                search={search}
+                page={page}
+                pageSize={pageSize}
+                stages={(stages ?? []) as { id: string; name: string }[]}
+              />
+            </Suspense>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Row-fetching subtree (streamed inside Suspense so the header + tabs +
+// sidebar don't wait for it).
+// ---------------------------------------------------------------------------
+
+async function CandidateRowsPane(props: {
+  view: string;
+  jobStatus: JobStatusFilter;
+  userId: string | null;
+  jobFilter: string | null;
+  stageFilter: string | null;
+  sourceFilter: string | null;
+  search: string;
+  page: number;
+  pageSize: number;
+  stages: { id: string; name: string }[];
+}) {
+  const { view, jobStatus, userId, jobFilter, stageFilter, sourceFilter, search, page, pageSize, stages } = props;
+  const supabase = await createClient();
+  const rangeFrom = page * pageSize;
+  const rangeTo = rangeFrom + pageSize - 1;
 
   let rows: CandidateRow[] = [];
+  let filteredTotal = 0;
 
   if (isAppView(view)) {
-    // Application-centric: one row per candidate × job, only active candidates,
-    // scoped to the selected job status.
+    // App-centric — filter joins directly on jobs.status. Skips the expensive
+    // eligibility pre-query entirely; that pre-query is only needed for
+    // candidate-centric views.
     let q = supabase
       .from("applications")
       .select(`
@@ -63,16 +168,16 @@ export default async function CandidatesPage({
         candidate:candidates!inner ( id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, owner_id, category ),
         job:jobs!inner ( id, title, status ),
         stage:stages ( id, name )
-      `)
+      `, { count: "exact" })
       .eq("candidates.category", "active")
       .eq("jobs.status", jobStatus)
       .order("updated_at", { ascending: false })
-      .limit(500);
+      .range(rangeFrom, rangeTo);
 
-    if (params.job) q = q.eq("job_id", params.job);
-    if (view === "my" && user) q = q.eq("candidates.owner_id", user.id);
-    if (params.stage) q = q.eq("current_stage_id", params.stage);
-    if (params.source) q = q.eq("candidates.source", params.source);
+    if (jobFilter)    q = q.eq("job_id", jobFilter);
+    if (view === "my" && userId) q = q.eq("candidates.owner_id", userId);
+    if (stageFilter)  q = q.eq("current_stage_id", stageFilter);
+    if (sourceFilter) q = q.eq("candidates.source", sourceFilter);
     if (search) {
       q = q.or(
         `first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`,
@@ -80,7 +185,8 @@ export default async function CandidatesPage({
       );
     }
 
-    const { data: applications } = await q;
+    const { data: applications, count } = await q;
+    filteredTotal = count ?? 0;
     const apps = (applications ?? []) as any[];
 
     const candidateIds = apps.map((a) => a.candidate?.id).filter(Boolean) as string[];
@@ -108,34 +214,37 @@ export default async function CandidatesPage({
       resume_document: resumeByCandidate.get(a.candidate?.id ?? "") ?? null
     }));
   } else if (view in CAT_VIEWS) {
-    // Candidate-centric — one row per candidate; only include candidates
-    // eligible under the current job-status filter.
+    // Candidate-centric. Fetch eligible ids via the RPC (one call, no URL bloat)
+    // and use them as the .in() filter. Only path that still needs this.
     const cat = CAT_VIEWS[view];
+    const { data: eligibleIds } = await supabase.rpc("candidate_ids_by_job_status", { p_status: jobStatus });
+    const idFilter = (eligibleIds as string[] | null)?.length
+      ? (eligibleIds as string[])
+      : ["00000000-0000-0000-0000-000000000000"];
+
     let cq = supabase
       .from("candidates")
       .select(`
         id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, category, updated_at,
         applications ( id, applied_at, updated_at, current_stage_id, job:jobs(title, status), stage:stages(name) )
-      `)
+      `, { count: "exact" })
       .eq("category", cat)
-      .in("id", eligibleCandidateIds.length ? eligibleCandidateIds : ["00000000-0000-0000-0000-000000000000"])
+      .in("id", idFilter)
       .order("updated_at", { ascending: false })
-      .limit(500);
+      .range(rangeFrom, rangeTo);
 
-    if (params.source) cq = cq.eq("source", params.source);
+    if (sourceFilter) cq = cq.eq("source", sourceFilter);
     if (search) {
       cq = cq.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
     }
 
-    const { data: candidates } = await cq;
+    const { data: candidates, count } = await cq;
+    filteredTotal = count ?? 0;
     const cRows = (candidates ?? []) as any[];
     const candidateIds = cRows.map((c) => c.id);
     const resumeByCandidate = await fetchLatestResumes(supabase, candidateIds);
 
     rows = cRows.map((c) => {
-      // Only consider apps whose job matches the status filter — otherwise the
-      // "latest" for a talent-pool candidate could be an active-job application
-      // even when the user filtered to "closed", which would leak the wrong badge.
       const apps = ((c.applications ?? []) as any[]).filter((a) => a.job?.status === jobStatus);
       const latest = apps.length ? apps.reduce((a, b) => (a.updated_at > b.updated_at ? a : b)) : null;
       return {
@@ -162,69 +271,15 @@ export default async function CandidatesPage({
     });
   }
 
-  // ---------------------------------------------------------------------------
-  // Sidebar / tabs data — always fetched, scoped to the current jobStatus.
-  // ---------------------------------------------------------------------------
-  const [
-    { data: jobsData },
-    { data: stages },
-    sectionCounts
-  ] = await Promise.all([
-    supabase.from("v_jobs_with_counts")
-      .select("id, title, candidate_count")
-      .eq("status", jobStatus)
-      .order("created_at", { ascending: false }),
-    supabase.from("stages").select("id, name").eq("is_archived", false).order("order"),
-    fetchSectionCounts(supabase, { jobStatus, userId: user?.id ?? null, eligibleCandidateIds })
-  ]);
-
   return (
-    <>
-      <CandidatesSubTabs counts={sectionCounts} />
-    <div className="flex min-h-[calc(100vh-6rem)]">
-      <CandidatesSidebar
-        jobStatus={jobStatus}
-        jobs={(jobsData ?? []).map((j: any) => ({ id: j.id, title: j.title, candidate_count: j.candidate_count }))}
-        counts={{
-          my: sectionCounts.my,
-          upcomingInterviews: 0,
-          pendingFeedback: 0
-        }}
-      />
-
-      <div className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
-        <header className="flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-baseline gap-3">
-              <h1 className="text-xl font-semibold tracking-tight">{titleFor(view)}</h1>
-              <span className="rounded-md bg-secondary px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">{rows.length}</span>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">{subtitleFor(view, jobStatus)}</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <JobStatusToggle value={jobStatus} />
-            <BulkActions kind="candidates" exportQuery={`?view=${view}&status=${jobStatus}${params.job ? `&job=${params.job}` : ""}`} />
-            <AddCandidateButton
-              jobs={(jobsData ?? []).map((j: any) => ({ id: j.id, title: j.title }))}
-              stages={(stages ?? []) as never}
-            />
-          </div>
-        </header>
-
-        <div className="mt-5">
-          <CandidateFilterBar stages={(stages ?? []) as never} />
-        </div>
-
-        <div className="mt-4">
-          <CandidateTable
-            rows={rows}
-            stages={(stages ?? []) as { id: string; name: string }[]}
-            emptyHint={rows.length === 0 ? emptyHintFor(view, jobStatus) : null}
-          />
-        </div>
-      </div>
-    </div>
-    </>
+    <CandidateTable
+      rows={rows}
+      stages={stages}
+      total={filteredTotal}
+      page={page}
+      pageSize={pageSize}
+      emptyHint={rows.length === 0 ? emptyHintFor(view, jobStatus) : null}
+    />
   );
 }
 
@@ -265,22 +320,6 @@ function emptyHintFor(view: string, jobStatus: JobStatusFilter): string {
   return `No ${base} ${scope}.`;
 }
 
-async function fetchEligibleCandidateIds(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  jobStatus: JobStatusFilter
-): Promise<string[]> {
-  const { data } = await supabase
-    .from("applications")
-    .select("candidate_id, job:jobs!inner(status)")
-    .eq("jobs.status", jobStatus)
-    .limit(20000);
-  const ids = new Set<string>();
-  for (const row of (data as Array<{ candidate_id: string }> | null) ?? []) {
-    if (row.candidate_id) ids.add(row.candidate_id);
-  }
-  return [...ids];
-}
-
 async function fetchLatestResumes(
   supabase: Awaited<ReturnType<typeof createClient>>,
   candidateIds: string[]
@@ -304,58 +343,4 @@ async function fetchLatestResumes(
     }
   }
   return map;
-}
-
-/**
- * Per-tab counts, scoped to the current job-status filter. Used by the
- * sub-tabs strip AND the sidebar "My candidates" badge.
- */
-export interface SectionCounts {
-  my: number;
-  all: number;
-  talent_pool: number;
-  archived: number;
-  duplicates: number;
-}
-
-async function fetchSectionCounts(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  opts: { jobStatus: JobStatusFilter; userId: string | null; eligibleCandidateIds: string[] }
-): Promise<SectionCounts> {
-  const { jobStatus, userId, eligibleCandidateIds } = opts;
-
-  // App-centric counts: applications joined to jobs of this status, candidate category = 'active'.
-  const allQ = supabase
-    .from("applications")
-    .select("id, candidate:candidates!inner(id, owner_id, category), job:jobs!inner(id, status)", { count: "exact", head: true })
-    .eq("candidates.category", "active")
-    .eq("jobs.status", jobStatus);
-
-  const myQ = userId
-    ? supabase.from("applications")
-        .select("id, candidate:candidates!inner(id, owner_id, category), job:jobs!inner(id, status)", { count: "exact", head: true })
-        .eq("candidates.category", "active")
-        .eq("candidates.owner_id", userId)
-        .eq("jobs.status", jobStatus)
-    : null;
-
-  // Candidate-centric counts: candidate in this category, AND eligible under jobStatus.
-  const ids = eligibleCandidateIds.length ? eligibleCandidateIds : ["00000000-0000-0000-0000-000000000000"];
-  const catCount = (category: CandidateCategory) =>
-    supabase.from("candidates")
-      .select("id", { count: "exact", head: true })
-      .eq("category", category)
-      .in("id", ids);
-
-  const [all, my, talent, archived, duplicates] = await Promise.all([
-    allQ, myQ, catCount("talent_pool"), catCount("archived"), catCount("duplicate")
-  ]);
-
-  return {
-    my:          my?.count ?? 0,
-    all:         all.count ?? 0,
-    talent_pool: talent.count ?? 0,
-    archived:    archived.count ?? 0,
-    duplicates:  duplicates.count ?? 0
-  };
 }

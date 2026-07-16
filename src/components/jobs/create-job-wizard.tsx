@@ -11,9 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
+import { JobTeamEditor, type JobTeamMember, type JobTeamSelection } from "@/components/jobs/job-team-editor";
 
 type Option = { id: string; name: string };
-type Member = { id: string; first_name: string | null; last_name: string | null; email: string };
+type Member = JobTeamMember;
 
 const STEPS = ["Job Description", "Job Details", "Hiring Team (Optional)", "Publish Options"] as const;
 
@@ -74,9 +75,13 @@ export function CreateJobWizard({
   }
   function removeSkill(s: string) { update("skills", form.skills.filter((x) => x !== s)); }
 
-  function toggleMember(field: "hiring_manager_ids" | "recruiter_ids" | "interviewer_ids", id: string) {
-    const list = form[field];
-    update(field, list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
+  function updateTeam(next: JobTeamSelection) {
+    setForm((f) => ({
+      ...f,
+      hiring_manager_ids: next.hiring_manager_ids,
+      recruiter_ids: next.recruiter_ids,
+      interviewer_ids: next.interviewer_ids
+    }));
   }
 
   function validate(): string | null {
@@ -304,11 +309,16 @@ export function CreateJobWizard({
           )}
 
           {step === 2 && (
-            <div className="grid gap-6 md:grid-cols-3">
-              <MemberList title="Hiring Manager" members={members} selected={form.hiring_manager_ids} onToggle={(id) => toggleMember("hiring_manager_ids", id)} />
-              <MemberList title="Recruiters" members={members} selected={form.recruiter_ids} onToggle={(id) => toggleMember("recruiter_ids", id)} />
-              <MemberList title="Interviewers" members={members} selected={form.interviewer_ids} onToggle={(id) => toggleMember("interviewer_ids", id)} />
-            </div>
+            <JobTeamEditor
+              members={members}
+              value={{
+                hiring_manager_ids: form.hiring_manager_ids,
+                recruiter_ids: form.recruiter_ids,
+                interviewer_ids: form.interviewer_ids
+              }}
+              onChange={updateTeam}
+              disabled={pending}
+            />
           )}
 
           {step === 3 && (
@@ -335,22 +345,3 @@ export function CreateJobWizard({
   );
 }
 
-function MemberList({ title, members, selected, onToggle }: { title: string; members: Member[]; selected: string[]; onToggle: (id: string) => void }) {
-  return (
-    <div className="rounded-md border border-border p-3">
-      <h4 className="mb-2 text-sm font-semibold">{title}</h4>
-      <ul className="space-y-1.5 max-h-72 overflow-y-auto">
-        {members.map((m) => (
-          <li key={m.id}>
-            <label className="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-secondary/50">
-              <input type="checkbox" checked={selected.includes(m.id)} onChange={() => onToggle(m.id)} />
-              <span className="flex-1">{`${m.first_name ?? ""} ${m.last_name ?? ""}`.trim() || m.email}</span>
-              <span className="text-xs text-muted-foreground">{m.email}</span>
-            </label>
-          </li>
-        ))}
-        {members.length === 0 && <li className="text-xs text-muted-foreground">Invite people from Settings → Users.</li>}
-      </ul>
-    </div>
-  );
-}

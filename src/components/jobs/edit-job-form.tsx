@@ -10,7 +10,8 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/components/ui/toast";
-import { updateJob } from "@/app/(app)/jobs/actions";
+import { updateJob, saveJobTeam } from "@/app/(app)/jobs/actions";
+import { JobTeamEditor, type JobTeamMember, type JobTeamSelection } from "@/components/jobs/job-team-editor";
 
 type Option = { id: string; name: string };
 
@@ -38,14 +39,17 @@ export interface JobInitial {
 
 interface Props {
   initial: JobInitial;
+  initialTeam: JobTeamSelection;
   departments: Option[];
   locations: Option[];
   businessUnits: Option[];
+  members: JobTeamMember[];
 }
 
-export function EditJobForm({ initial, departments, locations, businessUnits }: Props) {
+export function EditJobForm({ initial, initialTeam, departments, locations, businessUnits, members }: Props) {
   const router = useRouter();
   const [f, setF] = React.useState(initial);
+  const [team, setTeam] = React.useState<JobTeamSelection>(initialTeam);
   const [skillInput, setSkillInput] = React.useState("");
   const [pending, setPending] = React.useState(false);
 
@@ -62,14 +66,27 @@ export function EditJobForm({ initial, departments, locations, businessUnits }: 
   async function save() {
     if (!f.title.trim()) return toast.error("Title is required.");
     setPending(true);
+
     const { id, ...patch } = f;
-    const result = await updateJob(id, {
+    // 1. Persist the job fields.
+    const jobResult = await updateJob(id, {
       ...patch,
       title: f.title.trim(),
       target_close_date: f.target_close_date || null
     });
+    if (!jobResult.ok) {
+      setPending(false);
+      return toast.error(jobResult.error ?? "Update failed.");
+    }
+
+    // 2. Persist the hiring team (atomic replace via RPC).
+    const teamResult = await saveJobTeam(id, team);
     setPending(false);
-    if (!result.ok) return toast.error(result.error ?? "Update failed.");
+    if (!teamResult.ok) {
+      // Job fields already saved — surface the error but don't discard the user's changes.
+      return toast.error(`Job saved, but team update failed: ${teamResult.error}`);
+    }
+
     toast.success("Saved.");
     router.push(`/jobs/${id}`);
     router.refresh();
@@ -239,6 +256,24 @@ export function EditJobForm({ initial, departments, locations, businessUnits }: 
               />
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle className="text-base">Hiring team</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Assign hiring managers, recruiters, and interviewers. Only active members of your organisation appear here.
+            Changes take effect immediately after Save.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <JobTeamEditor
+            members={members}
+            value={team}
+            onChange={setTeam}
+            disabled={pending}
+          />
         </CardContent>
       </Card>
 

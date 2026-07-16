@@ -3,9 +3,10 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 
+// Order: All Candidates first (default), then My, then the candidate-centric buckets.
 const TABS = [
-  { id: "my",          label: "My Candidates",  countKey: "my" as const },
   { id: "all",         label: "All Candidates", countKey: "all" as const },
+  { id: "my",          label: "My Candidates",  countKey: "my" as const },
   { id: "talent_pool", label: "Talent Pool",    countKey: "talent_pool" as const },
   { id: "archived",    label: "Archived",       countKey: "archived" as const },
   { id: "duplicates",  label: "Duplicates",     countKey: "duplicates" as const }
@@ -22,15 +23,18 @@ interface Props {
  */
 export function CandidatesSubTabs({ counts }: Props) {
   const search = useSearchParams();
-  const active = search.get("view") ?? "my";
+  // Default view is now "all"; omitting ?view= keeps URLs short.
+  const active = search.get("view") ?? "all";
 
   function hrefFor(id: string) {
     const params = new URLSearchParams(search.toString());
-    if (id === "my") params.delete("view");
+    if (id === "all") params.delete("view");     // "all" is the default — no need to spell it out
     else params.set("view", id);
-    // Job filter is tied to the *active* status; drop it on tab switch so a
+    // Job filter belongs to the *active* status; drop it on tab switch so a
     // stale filter doesn't accidentally hide candidates in the new view.
     params.delete("job");
+    // Pagination is tab-local — a page number from the previous tab has no meaning here.
+    params.delete("page");
     const qs = params.toString();
     return `/candidates${qs ? `?${qs}` : ""}`;
   }

@@ -78,6 +78,26 @@ export type Database = {
         Args: { p_job_id: string };
         Returns: { stage_id: string; stage_name: string; stage_order: number; count: number }[];
       };
+      replace_job_team: {
+        Args: {
+          p_job_id: string;
+          p_hiring_manager_ids: string[];
+          p_recruiter_ids: string[];
+          p_interviewer_ids: string[];
+        };
+        Returns: void;
+      };
+      candidates_dashboard: {
+        Args: { p_job_status: string; p_user_id: string | null };
+        Returns: {
+          jobs: Array<{ id: string; title: string; candidate_count: number }>;
+          counts: { my: number; all: number; talent_pool: number; archived: number; duplicates: number };
+        };
+      };
+      candidate_ids_by_job_status: {
+        Args: { p_status: string };
+        Returns: string[];
+      };
     };
     Enums: Record<string, string>;
     CompositeTypes: Record<string, never>;

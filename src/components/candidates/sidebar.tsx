@@ -16,7 +16,8 @@ interface Props {
 export function CandidatesSidebar({ jobStatus, jobs, counts }: Props) {
   const pathname = usePathname();
   const search = useSearchParams();
-  const view = search.get("view") ?? "my";
+  // Default view is now "all" — matches the sub-tabs and the page.
+  const view = search.get("view") ?? "all";
   const filterJob = search.get("job");
   const [jobQuery, setJobQuery] = React.useState("");
 
@@ -28,7 +29,7 @@ export function CandidatesSidebar({ jobStatus, jobs, counts }: Props) {
   }
 
   const items = [
-    { href: urlFor({ view: null }),                  label: "My candidates",       icon: Users,             count: counts?.my,                 active: view === "my" },
+    { href: urlFor({ view: "my" }),                  label: "My candidates",       icon: Users,             count: counts?.my,                 active: view === "my" },
     { href: urlFor({ view: "upcoming_interviews" }), label: "Upcoming interviews", icon: Calendar,          count: counts?.upcomingInterviews, active: view === "upcoming_interviews" },
     { href: urlFor({ view: "pending_feedback" }),    label: "Pending feedback",    icon: MessageSquareQuote, count: counts?.pendingFeedback,    active: view === "pending_feedback", info: true }
   ];
