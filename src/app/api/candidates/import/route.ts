@@ -32,6 +32,9 @@ interface CandidateCsvRow {
 }
 
 const PUBLIC_RESUMES_ROOT = path.join(process.cwd(), "public", "Resumes");
+const MAX_RESUME_BYTES = 10 * 1024 * 1024;    // 10 MB — matches manual upload cap
+const ALLOWED_RESUME_EXT = new Set(["pdf", "doc", "docx", "rtf", "txt"]);
+const URL_FETCH_TIMEOUT_MS = 20_000;          // give a slow WordPress upload dir ~20s
 
 function mimeForExt(filename: string): string {
   const ext = filename.toLowerCase().split(".").pop() ?? "";
@@ -43,6 +46,26 @@ function mimeForExt(filename: string): string {
     case "txt":  return "text/plain";
     default:     return "application/octet-stream";
   }
+}
+
+function isHttpUrl(s: string): boolean {
+  return /^https?:\/\//i.test(s);
+}
+
+/** Pull a filename out of a URL. Falls back to a generic name if the URL has no path. */
+function filenameFromUrl(u: string): string {
+  try {
+    const p = new URL(u).pathname;
+    const base = decodeURIComponent(path.posix.basename(p));
+    return base || "resume.pdf";
+  } catch {
+    return "resume.pdf";
+  }
+}
+
+/** Sanitize for use inside a Supabase Storage path. */
+function safeFilename(name: string): string {
+  return name.replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 200) || "resume.pdf";
 }
 
 function resolveResumePath(rel: string): string | null {
@@ -186,36 +209,93 @@ export async function POST(req: Request) {
           }
         }
 
-        // Resume upload — idempotent:
-        //   1. If the candidate already has a resume documents row, skip upload entirely.
-        //   2. Use a stable storage path (no timestamp) with upsert:true so any explicit
-        //      re-upload replaces the existing object instead of orphaning it.
+        // Resume — two paths:
+        //   • http(s) URL  → fetch, upload to Supabase Storage 'resumes' bucket,
+        //                    record documents row with storage_bucket='resumes'.
+        //   • anything else → treat as a path under public/Resumes/ (existing behavior),
+        //                    record with storage_bucket='public_resumes'.
+        // Idempotent: if the candidate already has a resume row, skip completely.
         let resumeOk = false;
         const resumeRel = (r.Resume ?? r.resume ?? "").trim();
         if (resumeRel) {
-          const absPath = resolveResumePath(resumeRel);
-          if (!absPath) {
-            failures.push(`${rowLabel}: unsafe resume path "${resumeRel}"`);
-          } else {
-            const { data: existingResume } = await supabase.from("documents")
-              .select("id")
-              .eq("candidate_id", candidateId)
-              .eq("kind", "resume")
-              .limit(1)
-              .maybeSingle();
+          const { data: existingResume } = await supabase.from("documents")
+            .select("id")
+            .eq("candidate_id", candidateId)
+            .eq("kind", "resume")
+            .limit(1)
+            .maybeSingle();
 
-            if (existingResume) {
-              // Already imported previously; leave the existing documents row untouched.
-              resumeOk = true;
+          if (existingResume) {
+            // Already imported previously; leave the existing documents row untouched.
+            resumeOk = true;
+          } else if (isHttpUrl(resumeRel)) {
+            // ---- URL branch ----
+            try {
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), URL_FETCH_TIMEOUT_MS);
+              let res: Response;
+              try {
+                res = await fetch(resumeRel, {
+                  signal: controller.signal,
+                  redirect: "follow",
+                  headers: { Accept: "application/pdf, application/msword, application/*, */*" }
+                });
+              } finally {
+                clearTimeout(timer);
+              }
+              if (!res.ok) {
+                failures.push(`${rowLabel}: resume URL returned HTTP ${res.status}`);
+              } else {
+                // Filename + extension from URL, MIME preferred from response header.
+                const urlName = filenameFromUrl(resumeRel);
+                const ext = urlName.toLowerCase().split(".").pop() ?? "";
+                if (!ALLOWED_RESUME_EXT.has(ext)) {
+                  failures.push(`${rowLabel}: resume URL has unsupported extension ".${ext}" (allowed: pdf/doc/docx/rtf/txt)`);
+                } else {
+                  const buf = Buffer.from(await res.arrayBuffer());
+                  if (buf.length === 0) {
+                    failures.push(`${rowLabel}: resume URL returned empty body`);
+                  } else if (buf.length > MAX_RESUME_BYTES) {
+                    failures.push(`${rowLabel}: resume is larger than ${MAX_RESUME_BYTES / (1024 * 1024)} MB (${Math.round(buf.length / 1024 / 1024)} MB)`);
+                  } else {
+                    const safe = safeFilename(urlName);
+                    const contentType = res.headers.get("content-type") || mimeForExt(safe);
+                    // Stable path so re-imports overwrite instead of orphaning.
+                    const storagePath = `${tenantId}/${candidateId}/import-${safe}`;
+                    const { error: upErr } = await supabase.storage.from("resumes")
+                      .upload(storagePath, buf, { contentType, upsert: true });
+                    if (upErr) {
+                      failures.push(`${rowLabel}: resume upload failed (${upErr.message})`);
+                    } else {
+                      const { error: docErr } = await supabase.from("documents").insert({
+                        tenant_id: tenantId, candidate_id: candidateId, kind: "resume",
+                        name: safe, mime: contentType.split(";")[0].trim(), size_bytes: buf.length,
+                        storage_bucket: "resumes", storage_path: storagePath, uploaded_by: user.id
+                      } as never);
+                      if (docErr) failures.push(`${rowLabel}: resume stored but link failed (${docErr.message})`);
+                      else { resumesUploaded++; resumeOk = true; }
+                    }
+                  }
+                }
+              }
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : String(err);
+              failures.push(
+                msg.includes("aborted") || msg.includes("timeout")
+                  ? `${rowLabel}: resume URL timed out (>${URL_FETCH_TIMEOUT_MS / 1000}s)`
+                  : `${rowLabel}: resume URL fetch failed (${msg})`
+              );
+            }
+          } else {
+            // ---- Public-folder path branch (existing behavior, untouched) ----
+            const absPath = resolveResumePath(resumeRel);
+            if (!absPath) {
+              failures.push(`${rowLabel}: unsafe resume path "${resumeRel}"`);
             } else {
               try {
-                // Confirm the file exists on disk (throws ENOENT if not) — we don't upload
-                // anywhere, we just record the public-folder path so the app serves it
-                // directly from /Resumes/<...>. Files are committed to git.
                 const stat = await fs.stat(absPath);
                 const fileName = path.basename(absPath);
                 const mime = mimeForExt(fileName);
-                // Storage path is the CSV-relative path under public/Resumes/ (e.g. "Content Writer/Alfina L.pdf").
                 const relPath = resumeRel.replace(/^[\\/]+/, "").replace(/\\/g, "/");
 
                 const { error: docErr } = await supabase.from("documents").insert({
