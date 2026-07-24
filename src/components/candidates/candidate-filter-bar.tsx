@@ -24,6 +24,7 @@ export function CandidateFilterBar({ stages }: Props) {
 
   const stage = params.get("stage") ?? "";
   const source = params.get("source") ?? "";
+  const ai = params.get("ai") ?? "";
   const qParam = params.get("q") ?? "";
 
   const [q, setQ] = React.useState(qParam);
@@ -41,11 +42,11 @@ export function CandidateFilterBar({ stages }: Props) {
     return () => clearTimeout(t);
   }, [q, qParam, setParam]);
 
-  const hasFilters = Boolean(stage || source || qParam);
+  const hasFilters = Boolean(stage || source || ai || qParam);
 
   function clearAll() {
     const next = new URLSearchParams(params.toString());
-    next.delete("stage"); next.delete("source"); next.delete("q");
+    next.delete("stage"); next.delete("source"); next.delete("ai"); next.delete("q");
     setQ("");
     router.push(`${pathname}${next.toString() ? `?${next}` : ""}`);
   }
@@ -64,6 +65,16 @@ export function CandidateFilterBar({ stages }: Props) {
           value={source}
           onChange={(v) => setParam("source", v)}
           options={SOURCES}
+        />
+        <FilterSelect
+          label="AI"
+          value={ai}
+          onChange={(v) => setParam("ai", v)}
+          options={[
+            { value: "shortlisted",     label: "AI Shortlisted" },
+            { value: "borderline",      label: "Borderline" },
+            { value: "not_shortlisted", label: "Not shortlisted" }
+          ]}
         />
 
         <label className="relative ml-auto flex h-9 w-full max-w-md min-w-[200px] flex-1 items-center rounded-md border border-input bg-white px-3 transition-colors focus-within:border-ring focus-within:ring-1 focus-within:ring-ring">

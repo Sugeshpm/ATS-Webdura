@@ -39,7 +39,7 @@ interface DashboardData {
 export default async function CandidatesPage({
   searchParams
 }: {
-  searchParams: Promise<{ view?: string; status?: string; job?: string; stage?: string; source?: string; q?: string; page?: string; pageSize?: string }>;
+  searchParams: Promise<{ view?: string; status?: string; job?: string; stage?: string; source?: string; q?: string; ai?: string; page?: string; pageSize?: string }>;
 }) {
   const params = await searchParams;
   // Default view is now "all" (tabs reordered — All is first). Any legacy link
@@ -50,6 +50,10 @@ export default async function CandidatesPage({
   const page = Math.max(0, Number.parseInt(params.page ?? "0", 10) || 0);
   const rawPageSize = Number.parseInt(params.pageSize ?? "", 10) || DEFAULT_PAGE_SIZE;
   const pageSize = ALLOWED_PAGE_SIZES.has(rawPageSize) ? rawPageSize : DEFAULT_PAGE_SIZE;
+  // AI shortlist filter — must be a valid verdict value or null.
+  const aiFilter = (["shortlisted", "borderline", "not_shortlisted"] as const).includes(params.ai as never)
+    ? (params.ai as "shortlisted" | "borderline" | "not_shortlisted")
+    : null;
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -109,7 +113,7 @@ export default async function CandidatesPage({
                 key= forces a fresh <Suspense> whenever the query changes so the skeleton
                 shows immediately during tab / status / page switches. */}
             <Suspense
-              key={`${view}-${jobStatus}-${params.job ?? ""}-${params.stage ?? ""}-${params.source ?? ""}-${search}-${page}-${pageSize}`}
+              key={`${view}-${jobStatus}-${params.job ?? ""}-${params.stage ?? ""}-${params.source ?? ""}-${aiFilter ?? ""}-${search}-${page}-${pageSize}`}
               fallback={<CandidateTableSkeleton pageSize={pageSize} />}
             >
               <CandidateRowsPane
@@ -119,6 +123,7 @@ export default async function CandidatesPage({
                 jobFilter={params.job ?? null}
                 stageFilter={params.stage ?? null}
                 sourceFilter={params.source ?? null}
+                aiFilter={aiFilter}
                 search={search}
                 page={page}
                 pageSize={pageSize}
@@ -144,12 +149,13 @@ async function CandidateRowsPane(props: {
   jobFilter: string | null;
   stageFilter: string | null;
   sourceFilter: string | null;
+  aiFilter: "shortlisted" | "borderline" | "not_shortlisted" | null;
   search: string;
   page: number;
   pageSize: number;
   stages: { id: string; name: string }[];
 }) {
-  const { view, jobStatus, userId, jobFilter, stageFilter, sourceFilter, search, page, pageSize, stages } = props;
+  const { view, jobStatus, userId, jobFilter, stageFilter, sourceFilter, aiFilter, search, page, pageSize, stages } = props;
   const supabase = await createClient();
   const rangeFrom = page * pageSize;
   const rangeTo = rangeFrom + pageSize - 1;
@@ -164,7 +170,7 @@ async function CandidateRowsPane(props: {
     let q = supabase
       .from("applications")
       .select(`
-        id, applied_at, updated_at, current_stage_id,
+        id, applied_at, updated_at, current_stage_id, ai_status, ai_score,
         candidate:candidates!inner ( id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, owner_id, category ),
         job:jobs!inner ( id, title, status ),
         stage:stages ( id, name )
@@ -178,6 +184,7 @@ async function CandidateRowsPane(props: {
     if (view === "my" && userId) q = q.eq("candidates.owner_id", userId);
     if (stageFilter)  q = q.eq("current_stage_id", stageFilter);
     if (sourceFilter) q = q.eq("candidates.source", sourceFilter);
+    if (aiFilter) q = q.eq("ai_status", aiFilter);
     if (search) {
       q = q.or(
         `first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`,
@@ -211,7 +218,9 @@ async function CandidateRowsPane(props: {
       current_company: a.candidate?.current_company ?? null,
       gender: a.candidate?.gender ?? null,
       category: a.candidate?.category ?? "active",
-      resume_document: resumeByCandidate.get(a.candidate?.id ?? "") ?? null
+      resume_document: resumeByCandidate.get(a.candidate?.id ?? "") ?? null,
+      ai_status: a.ai_status ?? null,
+      ai_score: a.ai_score ?? null
     }));
   } else if (view in CAT_VIEWS) {
     // Candidate-centric. Fetch eligible ids via the RPC (one call, no URL bloat)
@@ -226,7 +235,7 @@ async function CandidateRowsPane(props: {
       .from("candidates")
       .select(`
         id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, category, updated_at,
-        applications ( id, applied_at, updated_at, current_stage_id, job:jobs(title, status), stage:stages(name) )
+        applications ( id, applied_at, updated_at, current_stage_id, ai_status, ai_score, job:jobs(title, status), stage:stages(name) )
       `, { count: "exact" })
       .eq("category", cat)
       .in("id", idFilter)
@@ -266,7 +275,9 @@ async function CandidateRowsPane(props: {
         current_company: c.current_company,
         gender: c.gender,
         category: c.category as CandidateCategory,
-        resume_document: resumeByCandidate.get(c.id) ?? null
+        resume_document: resumeByCandidate.get(c.id) ?? null,
+        ai_status: latest?.ai_status ?? null,
+        ai_score: latest?.ai_score ?? null
       };
     });
   }

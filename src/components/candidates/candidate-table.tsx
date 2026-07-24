@@ -23,7 +23,9 @@ import { MoveToMenu } from "@/components/candidates/move-to-menu";
 import { StagePickerBadge } from "@/components/candidates/stage-picker-badge";
 import { NotesQuickDrawer } from "@/components/candidates/notes-quick-drawer";
 import { ResumePreviewButton } from "@/components/candidates/resume-preview";
+import { AIShortlistBulkButton } from "@/components/candidates/ai-shortlist-bulk-button";
 import { createClient } from "@/lib/supabase/client";
+import { Sparkles } from "lucide-react";
 
 export type CandidateRow = {
   application_id: string | null;
@@ -51,6 +53,8 @@ export type CandidateRow = {
     storage_bucket: string;
     storage_path: string;
   } | null;
+  ai_status: "shortlisted" | "borderline" | "not_shortlisted" | "no_resume" | "error" | null;
+  ai_score: number | null;
 };
 
 const AVATAR_TONES = [
@@ -71,7 +75,7 @@ function avatarTone(seed: string) {
 // Column model — drives both the header and the body, and the visibility menu.
 // ---------------------------------------------------------------------------
 type ColumnKey =
-  | "candidate" | "resume" | "job_title" | "stage" | "category" | "experience"
+  | "candidate" | "resume" | "ai" | "job_title" | "stage" | "category" | "experience"
   | "updated" | "contact" | "notes" | "current_company" | "preferred_location" | "source" | "applied";
 
 interface RenderCtx {
@@ -113,6 +117,10 @@ const COLUMNS: ColumnDef[] = [
   {
     key: "resume", label: "Resume", defaultVisible: true, cellClassName: "w-12",
     render: (r) => <ResumePreviewButton document={r.resume_document} iconOnly />
+  },
+  {
+    key: "ai", label: "AI", defaultVisible: true, cellClassName: "w-16",
+    render: (r) => <AIBadge status={r.ai_status} score={r.ai_score} />
   },
   {
     key: "stage", label: "Stage", defaultVisible: true,
@@ -415,6 +423,14 @@ export function CandidateTable({
             <X className="h-4 w-4" />
           </Button>
           <span className="h-5 w-px bg-border" />
+          <AIShortlistBulkButton
+            applicationIds={
+              rows
+                .filter((r) => selected.has(r.candidate_id) && r.application_id)
+                .map((r) => r.application_id as string)
+            }
+            onDone={clear}
+          />
           <MoveToMenu candidateIds={Array.from(selected)} variant="button" onMoved={clear} />
           <Button variant="destructive" size="sm" onClick={() => setConfirmOpen(true)}>
             <Trash2 className="mr-1 h-4 w-4" /> Delete
@@ -433,6 +449,25 @@ export function CandidateTable({
         onConfirm={bulkDelete}
       />
     </>
+  );
+}
+
+function AIBadge({ status, score }: { status: CandidateRow["ai_status"]; score: number | null }) {
+  if (!status || status === "no_resume" || status === "error") {
+    return <span className="text-[10px] text-muted-foreground">—</span>;
+  }
+  const cls =
+    status === "shortlisted" ? "bg-emerald-500/15 text-emerald-700 border-emerald-500/30" :
+    status === "borderline"  ? "bg-amber-500/15 text-amber-700 border-amber-500/30" :
+                               "bg-rose-500/10 text-rose-700 border-rose-500/30";
+  return (
+    <span
+      title={status === "shortlisted" ? "AI shortlisted" : status === "borderline" ? "Borderline" : "Not shortlisted"}
+      className={cn("inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold tabular-nums", cls)}
+    >
+      <Sparkles className="h-2.5 w-2.5" />
+      {score ?? "—"}
+    </span>
   );
 }
 

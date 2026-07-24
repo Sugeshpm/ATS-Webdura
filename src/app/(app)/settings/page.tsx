@@ -40,7 +40,8 @@ export default async function SettingsPage() {
     { href: "/settings/locations",    title: "Locations",     desc: `${locCount} location${locCount === 1 ? "" : "s"}` },
     { href: "/settings/stages",       title: "Pipeline stages", desc: `${stageCount} active stage${stageCount === 1 ? "" : "s"}` },
     { href: "/settings/templates",    title: "Templates",     desc: `${tplCount} template${tplCount === 1 ? "" : "s"} — email, WhatsApp, offer letter, scorecards` },
-    { href: "/settings/integrations", title: "Integrations",  desc: `Meta Lead Ads · ${metaFormsCount} form${metaFormsCount === 1 ? "" : "s"} connected` }
+    { href: "/settings/integrations", title: "Integrations",  desc: `Meta Lead Ads · ${metaFormsCount} form${metaFormsCount === 1 ? "" : "s"} connected` },
+    { href: "/settings/ai",           title: "AI shortlisting", desc: "Score resumes against JDs using Claude. Threshold, model, monthly cost cap." }
   ];
 
   return (

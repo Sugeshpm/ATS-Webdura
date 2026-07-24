@@ -45,7 +45,7 @@ export default async function JobDetailPage({
   let appsQuery = supabase
     .from("applications")
     .select(`
-      id, applied_at, updated_at, current_stage_id,
+      id, applied_at, updated_at, current_stage_id, ai_status, ai_score,
       candidate:candidates!inner ( id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, category ),
       stage:stages ( id, name )
     `, { count: "exact" })
@@ -109,7 +109,9 @@ export default async function JobDetailPage({
     current_company: a.candidate?.current_company ?? null,
     gender: a.candidate?.gender ?? null,
     category: a.candidate?.category ?? "active",
-    resume_document: resumeByCandidate.get(a.candidate?.id ?? "") ?? null
+    resume_document: resumeByCandidate.get(a.candidate?.id ?? "") ?? null,
+    ai_status: a.ai_status ?? null,
+    ai_score: a.ai_score ?? null
   }));
 
   const funnelRows = (funnel ?? []) as { stage_id: string; stage_name: string; stage_order: number; count: number }[];

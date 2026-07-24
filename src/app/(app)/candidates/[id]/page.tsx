@@ -8,6 +8,7 @@ import { ResumePanel } from "@/components/candidates/candidate-detail/resume-pan
 import { ActivityTimeline, type ActivityEntry } from "@/components/candidates/candidate-detail/activity-timeline";
 import { NotesTab } from "@/components/candidates/candidate-detail/notes-tab";
 import { CandidateDetailShell } from "@/components/candidates/candidate-detail/candidate-detail-shell";
+import { AIShortlistPanel, type AIShortlistInitial } from "@/components/candidates/candidate-detail/ai-shortlist-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
     .from("applications")
     .select(`
       id, applied_at, current_stage_id, applied_via, is_archived,
+      ai_status, ai_score, ai_evaluated_at,
       candidate:candidates (
         id, tenant_id, first_name, middle_name, last_name, email, phone, gender, date_of_birth,
         current_company, current_location, preferred_location,
@@ -70,6 +72,28 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
 
   const skills = (skillsRows ?? []).map((r: any) => r.skill).filter(Boolean) as { id: string; name: string }[];
   const resume = (documents ?? []).find((d: any) => d.kind === "resume") ?? null;
+
+  // Latest AI evaluation (for strengths/gaps + summary).
+  const { data: latestEval } = await supabase
+    .from("ai_evaluations")
+    .select("summary, strengths, gaps, model, created_at")
+    .eq("application_id", applicationId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const aiInitial: AIShortlistInitial = {
+    ai_status: (app as { ai_status: string | null }).ai_status as never,
+    ai_score: (app as { ai_score: number | null }).ai_score,
+    ai_evaluated_at: (app as { ai_evaluated_at: string | null }).ai_evaluated_at,
+    latest: latestEval ? {
+      summary: (latestEval as { summary: string | null }).summary,
+      strengths: (latestEval as { strengths: string[] }).strengths ?? [],
+      gaps: (latestEval as { gaps: string[] }).gaps ?? [],
+      model: (latestEval as { model: string }).model,
+      created_at: (latestEval as { created_at: string }).created_at
+    } : null
+  };
 
   // Summary numbers
   const appliedJobsCount = (appliedJobs ?? []).length;
@@ -145,13 +169,16 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
   };
 
   const summary = (
-    <SummaryCards
-      stage={stage}
-      appliedJobsCount={appliedJobsCount}
-      interviewsCount={interviewsCount}
-      notesCount={notesCount}
-      lastActivityAt={lastActivityAt}
-    />
+    <>
+      <SummaryCards
+        stage={stage}
+        appliedJobsCount={appliedJobsCount}
+        interviewsCount={interviewsCount}
+        notesCount={notesCount}
+        lastActivityAt={lastActivityAt}
+      />
+      <AIShortlistPanel applicationId={applicationId} initial={aiInitial} />
+    </>
   );
 
   return (
