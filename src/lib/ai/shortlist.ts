@@ -355,9 +355,13 @@ export async function evaluateApplication(
     return { application_id: applicationId, status: "error", error: "Job description is empty." };
   }
 
-  const resume = await fetchResumeForCandidate(admin, app.candidate_id).catch((e) => {
-    return null as ResumeBytes | null;
-  });
+  let resume: ResumeBytes | null = null;
+  try {
+    resume = await fetchResumeForCandidate(admin, app.candidate_id);
+  } catch (e) {
+    console.warn("[ai/shortlist] resume fetch failed:", (e as Error).message);
+    // Fall through with resume=null so we record "no_resume" for review.
+  }
   if (!resume) {
     await recordEvaluation(admin, {
       app, documentId: null, score: 0, verdict: "no_resume",
@@ -367,6 +371,20 @@ export async function evaluateApplication(
     });
     await updateApplicationState(admin, app.id, "no_resume", 0);
     return { application_id: applicationId, status: "ok", score: 0, verdict: "no_resume", summary: "Candidate has no resume on file.", strengths: [], gaps: [], cost_usd: 0 };
+  }
+
+  // Anthropic's document content block accepts PDF only. Reject DOC/DOCX
+  // up-front rather than sending a mislabeled body and getting a cryptic 400.
+  const isPdf = resume.mediaType.toLowerCase().includes("pdf") || resume.filename.toLowerCase().endsWith(".pdf");
+  if (!isPdf) {
+    const msg = `Resume format not supported by AI shortlisting (only PDF; got "${resume.mediaType}"). Ask the candidate for a PDF copy.`;
+    await recordEvaluation(admin, {
+      app, documentId: resume.documentId, score: 0, verdict: "error",
+      summary: msg, strengths: [], gaps: [],
+      model: opts.modelOverride ?? settings.model, input_tokens: 0, output_tokens: 0,
+      cost: 0, error: "unsupported_media_type", createdBy: actingUserId
+    });
+    return { application_id: applicationId, status: "error", error: msg };
   }
 
   // 5. Call Claude.
@@ -381,8 +399,7 @@ export async function evaluateApplication(
       model,
       jd,
       resumeBase64: strip,
-      resumeMediaType: resume.mediaType.startsWith("application/pdf") ? "application/pdf" : "application/pdf"
-      // Anthropic currently only accepts application/pdf for document blocks — DOC/DOCX will fail.
+      resumeMediaType: "application/pdf"
     });
     result = c.input;
     input_tokens = c.input_tokens;
