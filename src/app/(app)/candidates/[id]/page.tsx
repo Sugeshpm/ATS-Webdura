@@ -29,7 +29,7 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
       category, updated_at
     ),
     job:jobs ( id, title ),
-    stage:stages ( id, name, code, color )
+    stage:stages!applications_current_stage_id_fkey ( id, name, code, color )
   `;
 
   // Primary lookup — treat [id] as an application id.
