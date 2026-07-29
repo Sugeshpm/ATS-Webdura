@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Folder, MessageSquare, MessagesSquare } from "lucide-react";
 import { formatDate } from "@/lib/utils";
@@ -17,26 +17,49 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  const { data: app } = await supabase
+  const CANDIDATE_QUERY = `
+    id, applied_at, current_stage_id, applied_via, is_archived,
+    ai_status, ai_score, ai_evaluated_at,
+    candidate:candidates (
+      id, tenant_id, first_name, middle_name, last_name, email, phone, gender, date_of_birth,
+      current_company, current_location, preferred_location,
+      experience_years, experience_months, notice_period_days,
+      current_salary, current_salary_currency, expected_salary, expected_salary_currency,
+      source, owner_id, linkedin_url, github_url, portfolio_url,
+      category, updated_at
+    ),
+    job:jobs ( id, title ),
+    stage:stages ( id, name, code, color )
+  `;
+
+  // Primary lookup — treat [id] as an application id.
+  let { data: app } = await supabase
     .from("applications")
-    .select(`
-      id, applied_at, current_stage_id, applied_via, is_archived,
-      ai_status, ai_score, ai_evaluated_at,
-      candidate:candidates (
-        id, tenant_id, first_name, middle_name, last_name, email, phone, gender, date_of_birth,
-        current_company, current_location, preferred_location,
-        experience_years, experience_months, notice_period_days,
-        current_salary, current_salary_currency, expected_salary, expected_salary_currency,
-        source, owner_id, linkedin_url, github_url, portfolio_url,
-        category, updated_at
-      ),
-      job:jobs ( id, title ),
-      stage:stages ( id, name, code, color )
-    `)
+    .select(CANDIDATE_QUERY)
     .eq("id", applicationId)
-    .single();
+    .maybeSingle();
+
+  // Fallback — some links (HR email, Meta leads panel) still send candidate_id
+  // in the URL. If nothing matched by application id, resolve by candidate id
+  // and pick the most-recent application. This makes stray URLs land correctly.
+  if (!app) {
+    const { data: byCandidate } = await supabase
+      .from("applications")
+      .select(CANDIDATE_QUERY)
+      .eq("candidate_id", applicationId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (byCandidate) app = byCandidate;
+  }
 
   if (!app) return notFound();
+  // If we fell back, rewrite the URL so subsequent shares/refreshes use the canonical application id.
+  const canonicalAppId = (app as { id: string }).id;
+  if (canonicalAppId !== applicationId) {
+    redirect(`/candidates/${canonicalAppId}`);
+  }
+
   const candidate = (app as any).candidate;
   const job = (app as any).job;
   const stage = (app as any).stage;

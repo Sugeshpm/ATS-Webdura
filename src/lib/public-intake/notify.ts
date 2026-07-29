@@ -32,7 +32,9 @@ export async function notifyHR(params: {
   }
 
   const subject = `New application: ${params.first_name} ${params.last_name ?? ""} — ${params.job_title}`;
-  const candidateUrl = `${appUrl}/candidates/${params.candidate_id}`;
+  // Link uses application_id — that's what the /candidates/[id] route expects.
+  // Candidate_id also works now via the fallback lookup, but the app-id URL is canonical.
+  const candidateUrl = `${appUrl}/candidates/${params.application_id}`;
   const html = `
     <p>A new application was submitted via the Webdura careers form.</p>
     <table cellpadding="6" style="border-collapse:collapse">
