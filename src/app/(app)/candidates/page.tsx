@@ -192,13 +192,23 @@ async function CandidateRowsPane(props: {
       .eq("jobs.status", jobStatus)
       .range(rangeFrom, rangeTo);
 
-    // Apply sort (or default). PostgREST accepts dotted refs like
-    // "candidates(first_name)" via the `referencedTable` option.
-    if (sortField && sortField.startsWith("candidate.")) {
-      const col = sortField.split(".")[1];
-      q = q.order(col, { ascending: sortDir === "asc", referencedTable: "candidates" });
-    } else if (sortField) {
-      q = q.order(sortField, { ascending: sortDir === "asc" });
+    // Sort — supabase-js's `.order(..., { referencedTable })` only sorts the
+    // EMBEDDED rows, not the top-level parents. For a to-one join that has no
+    // visible effect. So for candidate.* sorts on this application-centric
+    // query, remap to the closest equivalent column that lives ON applications:
+    //   candidate.created_at        → applied_at   (approximately equivalent)
+    //   candidate.first_name        → not sortable at DB level; fall back to updated_at
+    //   candidate.experience_years  → not sortable at DB level; fall back to updated_at
+    // Candidate-centric views (talent pool / archived / duplicates) sort against
+    // the candidates table directly and honour candidate.* natively — see below.
+    const APP_SORT_REMAP: Record<string, string> = {
+      "candidate.created_at": "applied_at"
+    };
+    const effectiveSort = sortField
+      ? (APP_SORT_REMAP[sortField] ?? (sortField.startsWith("candidate.") ? null : sortField))
+      : null;
+    if (effectiveSort) {
+      q = q.order(effectiveSort, { ascending: sortDir === "asc" });
     } else {
       q = q.order("updated_at", { ascending: false });
     }
