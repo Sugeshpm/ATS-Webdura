@@ -32,29 +32,55 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
     stage:stages ( id, name, code, color )
   `;
 
-  // Primary lookup — treat [id] as an application id.
-  let { data: app } = await supabase
+  // Primary lookup — treat [id] as an application id. If the SELECT hits a
+  // column that doesn't exist yet (e.g., a migration hasn't been applied)
+  // Supabase returns `data: null, error: { message: "column ... does not exist" }`.
+  // Log the error so 404s stop being silent.
+  const primary = await supabase
     .from("applications")
     .select(CANDIDATE_QUERY)
     .eq("id", applicationId)
     .maybeSingle();
+  if (primary.error) {
+    console.error("[candidate-detail] primary lookup error:", primary.error.message);
+  }
+  let app = primary.data;
 
-  // Fallback — some links (HR email, Meta leads panel) still send candidate_id
-  // in the URL. If nothing matched by application id, resolve by candidate id
-  // and pick the most-recent application. This makes stray URLs land correctly.
+  // Fallback 1 — treat [id] as a candidate_id and pick the most-recent application.
+  // Handles stray links from the HR email + Meta leads panel + anywhere else that
+  // built a URL from candidate_id instead of application_id.
   if (!app) {
-    const { data: byCandidate } = await supabase
+    const byCand = await supabase
       .from("applications")
       .select(CANDIDATE_QUERY)
       .eq("candidate_id", applicationId)
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (byCandidate) app = byCandidate;
+    if (byCand.error) console.error("[candidate-detail] candidate-id fallback error:", byCand.error.message);
+    if (byCand.data) app = byCand.data;
   }
 
-  if (!app) return notFound();
-  // If we fell back, rewrite the URL so subsequent shares/refreshes use the canonical application id.
+  // Fallback 2 — candidate exists but has zero applications (e.g., a Talent Pool
+  // entry). Redirect them to the candidates listing filtered to that candidate
+  // rather than serving 404 — recruiters can still open the profile inline.
+  if (!app) {
+    const { data: candidateOnly } = await supabase
+      .from("candidates")
+      .select("id, first_name, last_name")
+      .eq("id", applicationId)
+      .maybeSingle();
+    if (candidateOnly) {
+      console.info("[candidate-detail] candidate has no applications, redirecting to listing:", applicationId);
+      redirect(`/candidates?q=${encodeURIComponent((candidateOnly as { first_name: string }).first_name)}`);
+    }
+  }
+
+  if (!app) {
+    console.info("[candidate-detail] no application or candidate for id:", applicationId);
+    return notFound();
+  }
+  // If we fell back through candidate_id, rewrite the URL so subsequent shares/refreshes use the canonical application id.
   const canonicalAppId = (app as { id: string }).id;
   if (canonicalAppId !== applicationId) {
     redirect(`/candidates/${canonicalAppId}`);
