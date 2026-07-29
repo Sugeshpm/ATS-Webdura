@@ -16,7 +16,7 @@ export async function GET(req: Request) {
       updated_at,
       applied_via,
       job:jobs ( title ),
-      stage:stages ( name ),
+      stage:stages!applications_current_stage_id_fkey ( name ),
       candidate:candidates (
         first_name, middle_name, last_name, email, phone, gender, date_of_birth,
         current_company, current_location, preferred_location,
