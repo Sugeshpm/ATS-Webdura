@@ -32,10 +32,7 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
     stage:stages ( id, name, code, color )
   `;
 
-  // Primary lookup — treat [id] as an application id. If the SELECT hits a
-  // column that doesn't exist yet (e.g., a migration hasn't been applied)
-  // Supabase returns `data: null, error: { message: "column ... does not exist" }`.
-  // Log the error so 404s stop being silent.
+  // Primary lookup — treat [id] as an application id.
   const primary = await supabase
     .from("applications")
     .select(CANDIDATE_QUERY)
@@ -45,10 +42,9 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
     console.error("[candidate-detail] primary lookup error:", primary.error.message);
   }
   let app = primary.data;
+  let primaryError = primary.error?.message ?? null;
 
   // Fallback 1 — treat [id] as a candidate_id and pick the most-recent application.
-  // Handles stray links from the HR email + Meta leads panel + anywhere else that
-  // built a URL from candidate_id instead of application_id.
   if (!app) {
     const byCand = await supabase
       .from("applications")
@@ -57,14 +53,15 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (byCand.error) console.error("[candidate-detail] candidate-id fallback error:", byCand.error.message);
+    if (byCand.error) {
+      console.error("[candidate-detail] candidate-id fallback error:", byCand.error.message);
+      primaryError = primaryError ?? byCand.error.message;
+    }
     if (byCand.data) app = byCand.data;
   }
 
-  // Fallback 2 — candidate exists but has zero applications (e.g., a Talent Pool
-  // entry). Redirect them to the candidates listing filtered to that candidate
-  // rather than serving 404 — recruiters can still open the profile inline.
-  if (!app) {
+  // Fallback 2 — candidate exists but has zero applications. Redirect to listing.
+  if (!app && !primaryError) {
     const { data: candidateOnly } = await supabase
       .from("candidates")
       .select("id, first_name, last_name")
@@ -77,8 +74,26 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
   }
 
   if (!app) {
-    console.info("[candidate-detail] no application or candidate for id:", applicationId);
-    return notFound();
+    console.info("[candidate-detail] no application/candidate for id:", applicationId, "error:", primaryError);
+    return (
+      <div className="container max-w-2xl py-16 text-center">
+        <h1 className="text-2xl font-semibold">Couldn&apos;t load this candidate</h1>
+        <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
+          {primaryError
+            ? "The database rejected the request. The most likely cause is a schema-cache lag right after a migration — run "
+            : "This URL doesn't match any application or candidate in your organisation. It may be stale, or point to a record you don't have access to."}
+          {primaryError && <code className="mx-1 rounded bg-secondary px-1.5 py-0.5">notify pgrst, &apos;reload schema&apos;;</code>}
+          {primaryError && " in the Supabase SQL editor, then refresh this page."}
+        </p>
+        {primaryError && (
+          <div className="mx-auto mt-4 max-w-md rounded-md border border-rose-500/30 bg-rose-500/5 p-3 text-left text-xs text-rose-700">
+            <div className="mb-1 font-semibold uppercase tracking-wider">Technical detail</div>
+            <code>{primaryError}</code>
+          </div>
+        )}
+        <a href="/candidates" className="mt-6 inline-block text-sm text-primary hover:underline">← Back to Candidates</a>
+      </div>
+    );
   }
   // If we fell back through candidate_id, rewrite the URL so subsequent shares/refreshes use the canonical application id.
   const canonicalAppId = (app as { id: string }).id;
@@ -89,6 +104,22 @@ export default async function CandidateDetailPage({ params }: { params: Promise<
   const candidate = (app as any).candidate;
   const job = (app as any).job;
   const stage = (app as any).stage;
+
+  // The application row exists but its candidate foreign key doesn't resolve —
+  // either the candidate was deleted (orphaned application), or RLS is hiding
+  // the candidate row. Fail loudly so we know what's happening.
+  if (!candidate) {
+    console.error("[candidate-detail] application", (app as { id: string }).id, "has no candidate join — orphaned or blocked by RLS");
+    return (
+      <div className="container max-w-2xl py-16 text-center">
+        <h1 className="text-2xl font-semibold">Candidate data is missing</h1>
+        <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
+          This application exists but its linked candidate could not be loaded. The candidate may have been deleted, or your account does not have permission to view it.
+        </p>
+        <a href="/candidates" className="mt-6 inline-block text-sm text-primary hover:underline">← Back to Candidates</a>
+      </div>
+    );
+  }
 
   const [
     { data: stages },
