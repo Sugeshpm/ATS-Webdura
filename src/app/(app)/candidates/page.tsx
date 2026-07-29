@@ -195,14 +195,15 @@ async function CandidateRowsPane(props: {
     // Sort — supabase-js's `.order(..., { referencedTable })` only sorts the
     // EMBEDDED rows, not the top-level parents. For a to-one join that has no
     // visible effect. So for candidate.* sorts on this application-centric
-    // query, remap to the closest equivalent column that lives ON applications:
-    //   candidate.created_at        → applied_at   (approximately equivalent)
+    // query, remap to a column that lives ON applications:
+    //   candidate.created_at        → applied_at                 (rough proxy)
+    //   candidate.experience_years  → candidate_experience_years (denormalized, kept in sync by triggers)
     //   candidate.first_name        → not sortable at DB level; fall back to updated_at
-    //   candidate.experience_years  → not sortable at DB level; fall back to updated_at
-    // Candidate-centric views (talent pool / archived / duplicates) sort against
-    // the candidates table directly and honour candidate.* natively — see below.
+    // Candidate-centric views (talent pool / archived / duplicates) sort
+    // against the candidates table directly and honour candidate.* natively.
     const APP_SORT_REMAP: Record<string, string> = {
-      "candidate.created_at": "applied_at"
+      "candidate.created_at":       "applied_at",
+      "candidate.experience_years": "candidate_experience_years"
     };
     const effectiveSort = sortField
       ? (APP_SORT_REMAP[sortField] ?? (sortField.startsWith("candidate.") ? null : sortField))
