@@ -2,7 +2,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { Mail, Phone, Trash2, X, Columns3, ChevronLeft, ChevronRight } from "lucide-react";
+import { Mail, Phone, Trash2, X, Columns3, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +35,7 @@ export type CandidateRow = {
   job_title: string | null;
   stage_id: string | null;
   stage_name: string | null;
+  rejected_from_stage_name: string | null;
   experience_years: number | null;
   experience_months: number | null;
   applied_at: string | null;
@@ -90,12 +91,15 @@ interface ColumnDef {
   alwaysOn?: boolean;
   cellClassName?: string;
   headClassName?: string;
+  /** DB column to sort by. Absent = column is not sortable. */
+  sortField?: string;
   render: (r: CandidateRow, ctx: RenderCtx) => React.ReactNode;
 }
 
 const COLUMNS: ColumnDef[] = [
   {
     key: "candidate", label: "Candidate", defaultVisible: true, alwaysOn: true,
+    sortField: "candidate.first_name",
     render: (r) => {
       const inner = (
         <>
@@ -120,6 +124,7 @@ const COLUMNS: ColumnDef[] = [
   },
   {
     key: "ai", label: "AI", defaultVisible: true, cellClassName: "w-16",
+    sortField: "ai_score",
     render: (r) => <AIBadge status={r.ai_status} score={r.ai_score} />
   },
   {
@@ -129,6 +134,7 @@ const COLUMNS: ColumnDef[] = [
         applicationId={r.application_id}
         currentStageId={r.stage_id}
         currentStageName={r.stage_name}
+        rejectedFromStageName={r.rejected_from_stage_name}
         stages={ctx.stages}
       />
     )
@@ -145,6 +151,7 @@ const COLUMNS: ColumnDef[] = [
   },
   {
     key: "updated", label: "Last updated", defaultVisible: true, cellClassName: "text-muted-foreground",
+    sortField: "updated_at",
     render: (r) => formatDate(r.updated_at)
   },
   {
@@ -168,6 +175,7 @@ const COLUMNS: ColumnDef[] = [
   },
   {
     key: "experience", label: "Experience", defaultVisible: false, cellClassName: "text-foreground/80",
+    sortField: "candidate.experience_years",
     render: (r) => <>{r.experience_years ?? 0}y {r.experience_months ?? 0}m</>
   },
   {
@@ -184,6 +192,7 @@ const COLUMNS: ColumnDef[] = [
   },
   {
     key: "applied", label: "Applied", defaultVisible: false, cellClassName: "text-muted-foreground",
+    sortField: "applied_at",
     render: (r) => r.applied_at ? formatDate(r.applied_at) : "—"
   }
 ];
@@ -278,6 +287,19 @@ export function CandidateTable({
     navigateWith({ pageSize: nextSize === 25 ? null : String(nextSize), page: null });
   }
 
+  // Sort state read from URL. Cycle: asc → desc → clear.
+  const currentSort = search.get("sort") ?? "";
+  const currentDir  = search.get("dir") === "asc" ? "asc" : (search.get("dir") === "desc" ? "desc" : null);
+  function toggleSort(field: string) {
+    if (currentSort !== field) {
+      navigateWith({ sort: field, dir: "asc", page: null });
+    } else if (currentDir === "asc") {
+      navigateWith({ sort: field, dir: "desc", page: null });
+    } else {
+      navigateWith({ sort: null, dir: null, page: null });
+    }
+  }
+
   function toggle(id: string) {
     setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
@@ -355,9 +377,27 @@ export function CandidateTable({
               <Th className="w-10 pl-4">
                 <Checkbox checked={allChecked} onCheckedChange={toggleAll} aria-label="Select all on page" />
               </Th>
-              {visibleColumns.map((c) => (
-                <Th key={c.key} className={c.headClassName}>{c.label}</Th>
-              ))}
+              {visibleColumns.map((c) => {
+                const isSorted = c.sortField && c.sortField === currentSort;
+                const dir = isSorted ? currentDir : null;
+                return (
+                  <Th key={c.key} className={c.headClassName}>
+                    {c.sortField ? (
+                      <button
+                        type="button"
+                        onClick={() => toggleSort(c.sortField!)}
+                        className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+                        title="Click to sort"
+                      >
+                        {c.label}
+                        {dir === "asc"  ? <ArrowUp   className="h-3 w-3 text-primary" /> :
+                         dir === "desc" ? <ArrowDown className="h-3 w-3 text-primary" /> :
+                                          <ArrowUpDown className="h-3 w-3 opacity-40" />}
+                      </button>
+                    ) : c.label}
+                  </Th>
+                );
+              })}
               <Th className="w-12 pr-4 text-right">Actions</Th>
             </tr>
           </thead>

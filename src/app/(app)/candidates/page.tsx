@@ -39,7 +39,7 @@ interface DashboardData {
 export default async function CandidatesPage({
   searchParams
 }: {
-  searchParams: Promise<{ view?: string; status?: string; job?: string; stage?: string; source?: string; q?: string; ai?: string; page?: string; pageSize?: string }>;
+  searchParams: Promise<{ view?: string; status?: string; job?: string; stage?: string; source?: string; q?: string; ai?: string; sort?: string; dir?: string; page?: string; pageSize?: string }>;
 }) {
   const params = await searchParams;
   // Default view is now "all" (tabs reordered — All is first). Any legacy link
@@ -54,6 +54,14 @@ export default async function CandidatesPage({
   const aiFilter = (["shortlisted", "borderline", "not_shortlisted"] as const).includes(params.ai as never)
     ? (params.ai as "shortlisted" | "borderline" | "not_shortlisted")
     : null;
+
+  // Sort — validated against an allowlist so users can't inject arbitrary field names.
+  const SORT_ALLOWLIST = new Set([
+    "updated_at", "applied_at", "ai_score",
+    "candidate.first_name", "candidate.experience_years"
+  ]);
+  const sortField = SORT_ALLOWLIST.has(params.sort ?? "") ? params.sort! : null;
+  const sortDir = params.dir === "asc" ? "asc" : (params.dir === "desc" ? "desc" : null);
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -113,7 +121,7 @@ export default async function CandidatesPage({
                 key= forces a fresh <Suspense> whenever the query changes so the skeleton
                 shows immediately during tab / status / page switches. */}
             <Suspense
-              key={`${view}-${jobStatus}-${params.job ?? ""}-${params.stage ?? ""}-${params.source ?? ""}-${aiFilter ?? ""}-${search}-${page}-${pageSize}`}
+              key={`${view}-${jobStatus}-${params.job ?? ""}-${params.stage ?? ""}-${params.source ?? ""}-${aiFilter ?? ""}-${sortField ?? ""}-${sortDir ?? ""}-${search}-${page}-${pageSize}`}
               fallback={<CandidateTableSkeleton pageSize={pageSize} />}
             >
               <CandidateRowsPane
@@ -124,6 +132,8 @@ export default async function CandidatesPage({
                 stageFilter={params.stage ?? null}
                 sourceFilter={params.source ?? null}
                 aiFilter={aiFilter}
+                sortField={sortField}
+                sortDir={sortDir}
                 search={search}
                 page={page}
                 pageSize={pageSize}
@@ -150,12 +160,14 @@ async function CandidateRowsPane(props: {
   stageFilter: string | null;
   sourceFilter: string | null;
   aiFilter: "shortlisted" | "borderline" | "not_shortlisted" | null;
+  sortField: string | null;
+  sortDir: "asc" | "desc" | null;
   search: string;
   page: number;
   pageSize: number;
   stages: { id: string; name: string }[];
 }) {
-  const { view, jobStatus, userId, jobFilter, stageFilter, sourceFilter, aiFilter, search, page, pageSize, stages } = props;
+  const { view, jobStatus, userId, jobFilter, stageFilter, sourceFilter, aiFilter, sortField, sortDir, search, page, pageSize, stages } = props;
   const supabase = await createClient();
   const rangeFrom = page * pageSize;
   const rangeTo = rangeFrom + pageSize - 1;
@@ -170,15 +182,26 @@ async function CandidateRowsPane(props: {
     let q = supabase
       .from("applications")
       .select(`
-        id, applied_at, updated_at, current_stage_id, ai_status, ai_score,
+        id, applied_at, updated_at, current_stage_id, ai_status, ai_score, rejected_from_stage_id,
         candidate:candidates!inner ( id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, owner_id, category ),
         job:jobs!inner ( id, title, status ),
-        stage:stages ( id, name )
+        stage:stages!applications_current_stage_id_fkey ( id, name ),
+        rejected_from_stage:stages!applications_rejected_from_stage_id_fkey ( id, name )
       `, { count: "exact" })
       .eq("candidates.category", "active")
       .eq("jobs.status", jobStatus)
-      .order("updated_at", { ascending: false })
       .range(rangeFrom, rangeTo);
+
+    // Apply sort (or default). PostgREST accepts dotted refs like
+    // "candidates(first_name)" via the `referencedTable` option.
+    if (sortField && sortField.startsWith("candidate.")) {
+      const col = sortField.split(".")[1];
+      q = q.order(col, { ascending: sortDir === "asc", referencedTable: "candidates" });
+    } else if (sortField) {
+      q = q.order(sortField, { ascending: sortDir === "asc" });
+    } else {
+      q = q.order("updated_at", { ascending: false });
+    }
 
     if (jobFilter)    q = q.eq("job_id", jobFilter);
     if (view === "my" && userId) q = q.eq("candidates.owner_id", userId);
@@ -207,6 +230,7 @@ async function CandidateRowsPane(props: {
       job_title: a.job?.title ?? null,
       stage_id: a.current_stage_id ?? null,
       stage_name: a.stage?.name ?? null,
+      rejected_from_stage_name: a.rejected_from_stage?.name ?? null,
       experience_years: a.candidate?.experience_years ?? null,
       experience_months: a.candidate?.experience_months ?? null,
       applied_at: a.applied_at,
@@ -235,12 +259,22 @@ async function CandidateRowsPane(props: {
       .from("candidates")
       .select(`
         id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, category, updated_at,
-        applications ( id, applied_at, updated_at, current_stage_id, ai_status, ai_score, job:jobs(title, status), stage:stages(name) )
+        applications (
+          id, applied_at, updated_at, current_stage_id, ai_status, ai_score, rejected_from_stage_id,
+          job:jobs(title, status),
+          stage:stages!applications_current_stage_id_fkey(name),
+          rejected_from_stage:stages!applications_rejected_from_stage_id_fkey(name)
+        )
       `, { count: "exact" })
       .eq("category", cat)
       .in("id", idFilter)
-      .order("updated_at", { ascending: false })
       .range(rangeFrom, rangeTo);
+
+    // Candidate-centric view — sort by candidate column directly.
+    const cSortCol = sortField && sortField.startsWith("candidate.")
+      ? sortField.split(".")[1]
+      : (sortField === "updated_at" ? "updated_at" : "updated_at");
+    cq = cq.order(cSortCol, { ascending: sortDir === "asc" });
 
     if (sourceFilter) cq = cq.eq("source", sourceFilter);
     if (search) {
@@ -264,6 +298,7 @@ async function CandidateRowsPane(props: {
         job_title: latest?.job?.title ?? null,
         stage_id: latest?.current_stage_id ?? null,
         stage_name: latest?.stage?.name ?? null,
+        rejected_from_stage_name: latest?.rejected_from_stage?.name ?? null,
         experience_years: c.experience_years,
         experience_months: c.experience_months,
         applied_at: latest?.applied_at ?? null,
