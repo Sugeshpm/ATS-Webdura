@@ -58,7 +58,7 @@ export default async function CandidatesPage({
   // Sort — validated against an allowlist so users can't inject arbitrary field names.
   const SORT_ALLOWLIST = new Set([
     "updated_at", "applied_at", "ai_score",
-    "candidate.first_name", "candidate.experience_years"
+    "candidate.first_name", "candidate.experience_years", "candidate.created_at"
   ]);
   const sortField = SORT_ALLOWLIST.has(params.sort ?? "") ? params.sort! : null;
   const sortDir = params.dir === "asc" ? "asc" : (params.dir === "desc" ? "desc" : null);
@@ -183,7 +183,7 @@ async function CandidateRowsPane(props: {
       .from("applications")
       .select(`
         id, applied_at, updated_at, current_stage_id, ai_status, ai_score, rejected_from_stage_id,
-        candidate:candidates!inner ( id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, owner_id, category ),
+        candidate:candidates!inner ( id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, owner_id, category, created_at ),
         job:jobs!inner ( id, title, status ),
         stage:stages!applications_current_stage_id_fkey ( id, name ),
         rejected_from_stage:stages!applications_rejected_from_stage_id_fkey ( id, name )
@@ -234,6 +234,7 @@ async function CandidateRowsPane(props: {
       experience_years: a.candidate?.experience_years ?? null,
       experience_months: a.candidate?.experience_months ?? null,
       applied_at: a.applied_at,
+      created_at: a.candidate?.created_at ?? null,
       updated_at: a.updated_at,
       source: a.candidate?.source ?? null,
       email: a.candidate?.email ?? null,
@@ -258,7 +259,7 @@ async function CandidateRowsPane(props: {
     let cq = supabase
       .from("candidates")
       .select(`
-        id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, category, updated_at,
+        id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, category, created_at, updated_at,
         applications (
           id, applied_at, updated_at, current_stage_id, ai_status, ai_score, rejected_from_stage_id,
           job:jobs(title, status),
@@ -302,6 +303,7 @@ async function CandidateRowsPane(props: {
         experience_years: c.experience_years,
         experience_months: c.experience_months,
         applied_at: latest?.applied_at ?? null,
+        created_at: c.created_at ?? null,
         updated_at: c.updated_at,
         source: c.source,
         email: c.email,

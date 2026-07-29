@@ -46,7 +46,7 @@ export default async function JobDetailPage({
     .from("applications")
     .select(`
       id, applied_at, updated_at, current_stage_id, ai_status, ai_score, rejected_from_stage_id,
-      candidate:candidates!inner ( id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, category ),
+      candidate:candidates!inner ( id, first_name, last_name, email, phone, source, preferred_location, current_company, gender, experience_years, experience_months, category, created_at ),
       stage:stages!applications_current_stage_id_fkey ( id, name ),
       rejected_from_stage:stages!applications_rejected_from_stage_id_fkey ( id, name )
     `, { count: "exact" })
@@ -103,6 +103,7 @@ export default async function JobDetailPage({
     experience_years: a.candidate?.experience_years ?? null,
     experience_months: a.candidate?.experience_months ?? null,
     applied_at: a.applied_at,
+    created_at: a.candidate?.created_at ?? null,
     updated_at: a.updated_at,
     source: a.candidate?.source ?? null,
     email: a.candidate?.email ?? null,

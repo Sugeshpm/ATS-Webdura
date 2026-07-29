@@ -39,6 +39,7 @@ export type CandidateRow = {
   experience_years: number | null;
   experience_months: number | null;
   applied_at: string | null;
+  created_at: string | null;
   updated_at: string;
   source: string | null;
   email: string | null;
@@ -77,7 +78,7 @@ function avatarTone(seed: string) {
 // ---------------------------------------------------------------------------
 type ColumnKey =
   | "candidate" | "resume" | "ai" | "job_title" | "stage" | "category" | "experience"
-  | "updated" | "contact" | "notes" | "current_company" | "preferred_location" | "source" | "applied";
+  | "updated" | "created" | "contact" | "notes" | "current_company" | "preferred_location" | "source" | "applied";
 
 interface RenderCtx {
   stages: { id: string; name: string }[];
@@ -155,6 +156,11 @@ const COLUMNS: ColumnDef[] = [
     render: (r) => formatDate(r.updated_at)
   },
   {
+    key: "created", label: "Created", defaultVisible: true, cellClassName: "text-muted-foreground",
+    sortField: "candidate.created_at",
+    render: (r) => r.created_at ? formatDate(r.created_at) : <span className="text-muted-foreground">—</span>
+  },
+  {
     key: "notes", label: "Notes", defaultVisible: true, cellClassName: "w-12",
     render: (r, ctx) => (
       <NotesQuickDrawer
@@ -197,8 +203,8 @@ const COLUMNS: ColumnDef[] = [
   }
 ];
 
-// v2: default column set changed (Job Title + Category removed, Resume + Notes added).
-const STORAGE_KEY = "ats.candidates.columns.v2";
+// v3: added Created column to the default set.
+const STORAGE_KEY = "ats.candidates.columns.v3";
 const PAGE_SIZES = [10, 25, 50, 100];
 
 export function CandidateTable({
