@@ -10,6 +10,10 @@ export interface IntakePayload {
   job_title: string;
   default_job_id: string | null;
   source: string;                // usually "wordpress_careers"
+  /** Optional LinkedIn profile URL from the WP form. */
+  linkedin_url?: string | null;
+  /** Optional applicant "message" / cover-letter blurb. Stored on the application. */
+  applicant_message?: string | null;
 }
 
 export interface IntakeResult {
@@ -66,7 +70,8 @@ async function upsertCandidate(payload: IntakePayload): Promise<{ id: string; cr
     email,
     phone: payload.phone?.trim() || null,
     experience_years: payload.experience_years ?? 0,
-    source: payload.source
+    source: payload.source,
+    linkedin_url: payload.linkedin_url?.trim() || null
   };
   const { data: inserted, error } = await admin
     .from("candidates").insert(insert as never).select("id").single();
@@ -120,7 +125,8 @@ export async function upsertIntake(payload: IntakePayload): Promise<IntakeResult
       candidate_id: cand.id,
       job_id: jobId,
       current_stage_id: (sourcedStage as { id: string } | null)?.id ?? null,
-      applied_via: "wordpress_careers"
+      applied_via: "wordpress_careers",
+      applicant_message: payload.applicant_message?.trim() || null
     } as never).select("id").single();
 
   if (appErr || !newApp) {

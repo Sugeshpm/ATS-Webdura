@@ -119,6 +119,8 @@ export async function POST(req: Request) {
   const phone = (form.get("phone")?.toString() ?? "").trim();
   const jobTitle = (form.get("job_title")?.toString() ?? "").trim();
   const experienceRaw = form.get("experience_years")?.toString() ?? "";
+  const linkedinUrl = (form.get("linkedin_url")?.toString() ?? "").trim();
+  const message = (form.get("message")?.toString() ?? "").trim();
   const source = (form.get("source")?.toString() ?? "wordpress_careers").trim();
   const captchaToken = form.get("captcha_token")?.toString() ?? null;
   const honeypot = form.get("website_url")?.toString() ?? "";
@@ -178,7 +180,9 @@ export async function POST(req: Request) {
     experience_years: experienceYears,
     job_title: jobTitle,
     default_job_id: cred.default_job_id,
-    source
+    source,
+    linkedin_url: linkedinUrl || null,
+    applicant_message: message || null
   });
 
   if (intake.outcome === "rejected" || !intake.candidate_id) {
