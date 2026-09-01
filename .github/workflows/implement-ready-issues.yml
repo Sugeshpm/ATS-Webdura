@@ -1,0 +1,122 @@
+# Implementation workflow — runs in a repository CONNECTED to the Cloud
+# Software Factory. Triggers only when an issue is labeled
+# ready-to-implement (normally applied by a human confirming the triage
+# workflow's suggestion — see roadmap.md "Human approval checkpoints").
+#
+# Runs the portable implementation skill
+# (.claude/skills/implementation/SKILL.md) via Claude Code: implements the
+# change, runs the repository's own tests/build, opens a DRAFT pull
+# request referencing the issue, and NEVER merges.
+#
+# Least privilege: contents:write + pull-requests:write + issues:write
+# only. No "merge" scope exists in GitHub Actions' permission model to
+# revoke separately — the no-merge guarantee comes from (a) the skill's
+# explicit instructions and the --allowedTools restriction below never
+# including `gh pr merge` / `gh pr review`, and (b) branch protection on the
+# connected repository requiring human review before merge, which you must
+# configure manually (see README.md "Manual GitHub Setup").
+
+name: Implement Ready Issues
+
+on:
+  issues:
+    types: [labeled]
+
+permissions: {}
+
+concurrency:
+  group: implement-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  implement:
+    if: github.event.label.name == 'ready-to-implement'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      # The action fetches a short-lived OIDC token as part of its own
+      # runtime attestation even with direct API-key auth — omitting this
+      # makes the step fail with "Could not fetch an OIDC token". This
+      # grants only a workflow-run identity token, not any additional
+      # GitHub API access.
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity for the agent's commits
+        run: |
+          git config user.name "cloud-software-factory[bot]"
+          git config user.email "cloud-software-factory[bot]@users.noreply.github.com"
+
+      - name: Run implementation skill via Claude Code
+        # See https://github.com/anthropics/claude-code-action for current
+        # inputs — pin to a specific released version in production.
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Without this, the action requires Anthropic's separate "Claude"
+          # GitHub App to be installed on the repo (it uses that App's
+          # installation token unless one is given explicitly). Passing the
+          # workflow's own scoped token keeps this self-contained and
+          # avoids depending on a third-party App outside our control.
+          github_token: ${{ github.token }}
+          # See the matching comment in triage-issues.yml: the label that
+          # triggers this workflow may itself have been applied by the
+          # triage workflow's GITHUB_TOKEN (actor github-actions[bot]),
+          # not a human, so both known bot identities need to be trusted
+          # here too.
+          allowed_bots: "webdura-cloud-software-factory[bot],github-actions[bot]"
+          claude_args: '--allowedTools "Bash(gh issue view:*),Bash(gh issue comment:*),Bash(git:*),Bash(npm:*),Bash(npm run:*),Bash(gh pr create:*),Read,Write,Edit,Grep,Glob"'
+          prompt: |
+            Use the implementation skill at .claude/skills/implementation/SKILL.md
+            to implement issue #${{ github.event.issue.number }} in this
+            repository.
+
+            Issue title: ${{ github.event.issue.title }}
+
+            Confirm the issue still carries the ready-to-implement label
+            before doing anything. Follow the skill exactly: implement the
+            change, run the repository's own tests/build checks, create a
+            branch named factory/issue-${{ github.event.issue.number }}-<slug>,
+            commit, push the branch, and open the pull request as a DRAFT
+            with `gh pr create --draft`, referencing issue
+            #${{ github.event.issue.number }} in the PR body. Never run
+            `gh pr merge`, `gh pr review`, or anything that approves or
+            merges a pull request.
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Report implementation outcome to the factory dashboard
+        if: always()
+        env:
+          FACTORY_URL: ${{ secrets.FACTORY_URL }}
+          FACTORY_AGENT_CALLBACK_TOKEN: ${{ secrets.FACTORY_AGENT_CALLBACK_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "${FACTORY_URL:-}" ]; then
+            echo "FACTORY_URL not set — skipping dashboard callback (draft PR, if any, was still opened above)."
+            exit 0
+          fi
+
+          pr_json=$(gh pr list --search "linked:${{ github.event.issue.number }}" \
+            --json number,url,title,headRefName --limit 1 --jq '.[0] // empty')
+
+          if [ -z "$pr_json" ]; then
+            echo "::warning::No linked pull request found; the implementation may have stopped short (e.g. failing checks). Nothing to report."
+            exit 0
+          fi
+
+          echo "$pr_json" | jq \
+            --arg repo "${{ github.repository }}" \
+            --argjson issueNumber "${{ github.event.issue.number }}" \
+            '{repositoryFullName: $repo, issueNumber: $issueNumber, prNumber: .number, prUrl: .url, prTitle: .title, branchName: .headRefName}' \
+            | curl -sS -X POST "$FACTORY_URL/api/agent-events/implementation" \
+                -H "Authorization: Bearer $FACTORY_AGENT_CALLBACK_TOKEN" \
+                -H "Content-Type: application/json" \
+                --data @-
