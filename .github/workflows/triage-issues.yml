@@ -1,0 +1,118 @@
+# Triage workflow — runs in a repository CONNECTED to the Cloud Software
+# Factory. Copy this file (and implement-ready-issues.yml) into any GitHub
+# repository you onboard, or have the factory's onboarding flow install it
+# for you (see src/app/api/integrations/[id]/repositories/route.ts and
+# README.md "Manual GitHub Setup").
+#
+# On every new issue: runs the portable triage skill
+# (.claude/skills/triage/SKILL.md) via Claude Code, which applies exactly
+# one of ready-to-implement / ready-to-spec / needs-info / wait-to-implement
+# and comments with its reasoning. A final step reports the outcome back
+# to the factory dashboard for visibility and to open the human-review
+# checkpoint — it does not gate anything in this workflow.
+#
+# Least privilege: only issues:write + contents:read. No pull-requests
+# permission — this workflow cannot touch PRs at all.
+
+name: Triage Issues
+
+on:
+  issues:
+    types: [opened]
+
+permissions: {}
+
+concurrency:
+  group: triage-issue-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      # The action fetches a short-lived OIDC token as part of its own
+      # runtime attestation even with direct API-key auth (not just for
+      # the workload-identity-federation path) — omitting this makes the
+      # step fail with "Could not fetch an OIDC token". This grants only
+      # a workflow-run identity token, not any additional GitHub API access.
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run triage skill via Claude Code
+        # See https://github.com/anthropics/claude-code-action for current
+        # inputs — pin to a specific released version in production.
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Without this, the action requires Anthropic's separate "Claude"
+          # GitHub App to be installed on the repo (it uses that App's
+          # installation token unless one is given explicitly). Passing the
+          # workflow's own scoped token keeps this self-contained and
+          # avoids depending on a third-party App outside our control.
+          github_token: ${{ github.token }}
+          # Issues opened through the factory's own dashboard are created
+          # via the GitHub App's installation token, so GitHub records the
+          # actor as this bot, not a human — the action refuses to run for
+          # bot actors by default. github-actions[bot] is also allowlisted
+          # because this same workflow labels issues using GITHUB_TOKEN,
+          # and a bot-applied label can itself trigger a `labeled` event
+          # downstream (implement-ready-issues.yml) with that actor.
+          # Deliberately NOT '*' — only these two known, controlled
+          # identities are trusted, not arbitrary bots/Apps.
+          allowed_bots: "webdura-cloud-software-factory[bot],github-actions[bot]"
+          claude_args: '--allowedTools "Bash(gh issue view:*),Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(git log:*),Bash(git grep:*),Read,Grep,Glob"'
+          prompt: |
+            Use the triage skill at .claude/skills/triage/SKILL.md to triage
+            issue #${{ github.event.issue.number }} in this repository.
+
+            Issue title: ${{ github.event.issue.title }}
+
+            Follow the skill exactly: inspect the repository, check
+            roadmap.md and vision.md if present, apply exactly one of the
+            four triage labels using the `gh` CLI, and leave exactly one
+            comment explaining your reasoning. Do not open any branch or
+            pull request.
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Report triage outcome to the factory dashboard
+        if: always()
+        env:
+          FACTORY_URL: ${{ secrets.FACTORY_URL }}
+          FACTORY_AGENT_CALLBACK_TOKEN: ${{ secrets.FACTORY_AGENT_CALLBACK_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "${FACTORY_URL:-}" ]; then
+            echo "FACTORY_URL not set — skipping dashboard callback (triage label/comment were still applied above)."
+            exit 0
+          fi
+
+          applied_label=$(gh issue view "${{ github.event.issue.number }}" --json labels \
+            --jq '[.labels[].name] | map(select(. == "ready-to-implement" or . == "ready-to-spec" or . == "needs-info" or . == "wait-to-implement")) | .[0] // empty')
+
+          if [ -z "$applied_label" ]; then
+            echo "::warning::No triage label found on the issue after the triage skill ran; skipping dashboard callback."
+            exit 0
+          fi
+
+          reasoning=$(gh issue view "${{ github.event.issue.number }}" --json comments \
+            --jq '.comments[-1].body // ""')
+
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          jq -n \
+            --arg repo "${{ github.repository }}" \
+            --argjson number "${{ github.event.issue.number }}" \
+            --arg label "$applied_label" \
+            --arg reasoning "$reasoning" \
+            --arg runUrl "$run_url" \
+            '{repositoryFullName: $repo, issueNumber: $number, appliedLabel: $label, reasoning: $reasoning, agentRunUrl: $runUrl}' \
+            | curl -sS -X POST "$FACTORY_URL/api/agent-events/triage" \
+                -H "Authorization: Bearer $FACTORY_AGENT_CALLBACK_TOKEN" \
+                -H "Content-Type: application/json" \
+                --data @-
