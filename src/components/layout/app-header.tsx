@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { Menu, Search, Bell } from "lucide-react";
+import { Menu, Search } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { initials } from "@/lib/utils";
 
@@ -32,11 +32,7 @@ export function AppHeader({ user, onMenuClick }: Props) {
       </label>
 
       <div className="ml-auto flex items-center gap-1.5">
-        <button className="relative rounded-md p-2 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground" aria-label="Notifications">
-          <Bell className="h-4 w-4" />
-          <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-primary" />
-        </button>
-        <div className="ml-1 lg:hidden">
+        <div className="lg:hidden">
           <Avatar className="h-8 w-8">
             <AvatarFallback className="bg-primary text-[11px] font-semibold text-white">
               {initials(user.first_name, user.last_name)}
