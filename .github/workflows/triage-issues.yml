@@ -112,7 +112,14 @@ jobs:
             --arg reasoning "$reasoning" \
             --arg runUrl "$run_url" \
             '{repositoryFullName: $repo, issueNumber: $number, appliedLabel: $label, reasoning: $reasoning, agentRunUrl: $runUrl}' \
-            | curl -sS -X POST "$FACTORY_URL/api/agent-events/triage" \
+            | curl -sS -fL -X POST "$FACTORY_URL/api/agent-events/triage" \
                 -H "Authorization: Bearer $FACTORY_AGENT_CALLBACK_TOKEN" \
                 -H "Content-Type: application/json" \
                 --data @-
+          # -L: follow redirects (e.g. http:// or a trailing slash in
+          # FACTORY_URL both produce a 308 that curl silently drops
+          # without this — exactly what happened here: the step "ran"
+          # but the POST never reached the dashboard).
+          # -f: fail (non-zero exit) on an HTTP error response, so a
+          # misconfigured FACTORY_AGENT_CALLBACK_TOKEN shows as a red X
+          # on this step instead of silent success.
