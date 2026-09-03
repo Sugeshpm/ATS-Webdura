@@ -108,15 +108,43 @@ jobs:
             --json number,url,title,headRefName --limit 1 --jq '.[0] // empty')
 
           if [ -z "$pr_json" ]; then
-            echo "::warning::No linked pull request found; the implementation may have stopped short (e.g. failing checks). Nothing to report."
+            # No PR — report this as a FAILED job rather than staying
+            # silent, so /dashboard/jobs shows a real reason (and the
+            # "Create PR" fallback form) instead of nothing at all. Best
+            # guess at the reason: the implementation skill is instructed
+            # to comment when it stops short, so use its last comment;
+            # a branch matching this issue's naming convention (if one was
+            # pushed) is included too.
+            branch_name=$(gh api "repos/${{ github.repository }}/branches" --paginate \
+              --jq '.[] | select(.name | startswith("factory/issue-${{ github.event.issue.number }}-")) | .name' \
+              | head -n1)
+            last_comment=$(gh issue view "${{ github.event.issue.number }}" --json comments \
+              --jq '.comments[-1].body // "Implementation did not open a pull request; no explanation was left on the issue."')
+
+            jq -n \
+              --arg repo "${{ github.repository }}" \
+              --argjson issueNumber "${{ github.event.issue.number }}" \
+              --arg branch "$branch_name" \
+              --arg errorSummary "$last_comment" \
+              '{repositoryFullName: $repo, issueNumber: $issueNumber, status: "FAILED", errorSummary: $errorSummary}
+               + (if $branch != "" then {branchName: $branch} else {} end)' \
+              | curl -sS -fL -X POST "$FACTORY_URL/api/agent-events/implementation" \
+                  -H "Authorization: Bearer $FACTORY_AGENT_CALLBACK_TOKEN" \
+                  -H "Content-Type: application/json" \
+                  --data @-
             exit 0
           fi
 
           echo "$pr_json" | jq \
             --arg repo "${{ github.repository }}" \
             --argjson issueNumber "${{ github.event.issue.number }}" \
-            '{repositoryFullName: $repo, issueNumber: $issueNumber, prNumber: .number, prUrl: .url, prTitle: .title, branchName: .headRefName}' \
-            | curl -sS -X POST "$FACTORY_URL/api/agent-events/implementation" \
+            '{repositoryFullName: $repo, issueNumber: $issueNumber, status: "SUCCEEDED", prNumber: .number, prUrl: .url, prTitle: .title, branchName: .headRefName}' \
+            | curl -sS -fL -X POST "$FACTORY_URL/api/agent-events/implementation" \
                 -H "Authorization: Bearer $FACTORY_AGENT_CALLBACK_TOKEN" \
                 -H "Content-Type: application/json" \
                 --data @-
+          # -L: follow redirects (e.g. http:// or a trailing slash in
+          # FACTORY_URL both produce a 308 that curl silently drops
+          # without this). -f: fail on an HTTP error response instead of
+          # silently succeeding — see the matching comment in
+          # triage-issues.yml for the incident that motivated this.
